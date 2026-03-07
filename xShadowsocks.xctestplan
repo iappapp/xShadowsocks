@@ -1,0 +1,31 @@
+{
+  "configurations" : [
+    {
+      "id" : "309AEC37-CA5C-46C1-A911-E03E2B888C90",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:xShadowsocks.xcodeproj",
+        "identifier" : "042FC7E42F556E1E00904641",
+        "name" : "xShadowsocksUITests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:xShadowsocks.xcodeproj",
+        "identifier" : "042FC7DA2F556E1E00904641",
+        "name" : "xShadowsocksTests"
+      }
+    }
+  ],
+  "version" : 1
+}
