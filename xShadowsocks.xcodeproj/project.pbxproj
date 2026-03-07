@@ -1,0 +1,746 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		042C3A0C2F592258009C7F46 /* MihomoCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 042C3A0B2F592258009C7F46 /* MihomoCore.xcframework */; };
+		042C3A0D2F592258009C7F46 /* MihomoCore.xcframework in CopyFiles */ = {isa = PBXBuildFile; fileRef = 042C3A0B2F592258009C7F46 /* MihomoCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		042FC7FF2F556E6500904641 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 042FC7FE2F556E6500904641 /* NetworkExtension.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		042FC7DC2F556E1E00904641 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 042FC7C62F556E1B00904641 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 042FC7CD2F556E1B00904641;
+			remoteInfo = xShadowsocks;
+		};
+		042FC7E62F556E1E00904641 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 042FC7C62F556E1B00904641 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 042FC7CD2F556E1B00904641;
+			remoteInfo = xShadowsocks;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		042C39982F591FB0009C7F46 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				042C3A0D2F592258009C7F46 /* MihomoCore.xcframework in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		042C3A0B2F592258009C7F46 /* MihomoCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = MihomoCore.xcframework; sourceTree = "<group>"; };
+		042FC7CE2F556E1B00904641 /* xShadowsocks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = xShadowsocks.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		042FC7DB2F556E1E00904641 /* xShadowsocksTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = xShadowsocksTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		042FC7E52F556E1E00904641 /* xShadowsocksUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = xShadowsocksUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		042FC7FC2F556E6500904641 /* xPacketTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = xPacketTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		042FC7FE2F556E6500904641 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		042FC8082F556E6500904641 /* Exceptions for "xPacketTunnel" folder in "xPacketTunnel" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 042FC7FB2F556E6500904641 /* xPacketTunnel */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		042FC7D02F556E1B00904641 /* xShadowsocks */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = xShadowsocks;
+			sourceTree = "<group>";
+		};
+		042FC7DE2F556E1E00904641 /* xShadowsocksTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = xShadowsocksTests;
+			sourceTree = "<group>";
+		};
+		042FC7E82F556E1E00904641 /* xShadowsocksUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = xShadowsocksUITests;
+			sourceTree = "<group>";
+		};
+		042FC8002F556E6500904641 /* xPacketTunnel */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				042FC8082F556E6500904641 /* Exceptions for "xPacketTunnel" folder in "xPacketTunnel" target */,
+			);
+			path = xPacketTunnel;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		042FC7CB2F556E1B00904641 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				042C3A0C2F592258009C7F46 /* MihomoCore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7D82F556E1E00904641 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7E22F556E1E00904641 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7F92F556E6500904641 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				042FC7FF2F556E6500904641 /* NetworkExtension.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		042FC7C52F556E1B00904641 = {
+			isa = PBXGroup;
+			children = (
+				042FC7D02F556E1B00904641 /* xShadowsocks */,
+				042FC7DE2F556E1E00904641 /* xShadowsocksTests */,
+				042FC7E82F556E1E00904641 /* xShadowsocksUITests */,
+				042FC8002F556E6500904641 /* xPacketTunnel */,
+				042FC7FD2F556E6500904641 /* Frameworks */,
+				042FC7CF2F556E1B00904641 /* Products */,
+				042C3A0B2F592258009C7F46 /* MihomoCore.xcframework */,
+			);
+			sourceTree = "<group>";
+		};
+		042FC7CF2F556E1B00904641 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				042FC7CE2F556E1B00904641 /* xShadowsocks.app */,
+				042FC7DB2F556E1E00904641 /* xShadowsocksTests.xctest */,
+				042FC7E52F556E1E00904641 /* xShadowsocksUITests.xctest */,
+				042FC7FC2F556E6500904641 /* xPacketTunnel.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		042FC7FD2F556E6500904641 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				042FC7FE2F556E6500904641 /* NetworkExtension.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		042FC7CD2F556E1B00904641 /* xShadowsocks */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 042FC7EF2F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocks" */;
+			buildPhases = (
+				042FC7CA2F556E1B00904641 /* Sources */,
+				042FC7CB2F556E1B00904641 /* Frameworks */,
+				042C39982F591FB0009C7F46 /* CopyFiles */,
+				042FC7CC2F556E1B00904641 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				042FC7D02F556E1B00904641 /* xShadowsocks */,
+			);
+			name = xShadowsocks;
+			packageProductDependencies = (
+			);
+			productName = xShadowsocks;
+			productReference = 042FC7CE2F556E1B00904641 /* xShadowsocks.app */;
+			productType = "com.apple.product-type.application";
+		};
+		042FC7DA2F556E1E00904641 /* xShadowsocksTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 042FC7F22F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocksTests" */;
+			buildPhases = (
+				042FC7D72F556E1E00904641 /* Sources */,
+				042FC7D82F556E1E00904641 /* Frameworks */,
+				042FC7D92F556E1E00904641 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				042FC7DD2F556E1E00904641 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				042FC7DE2F556E1E00904641 /* xShadowsocksTests */,
+			);
+			name = xShadowsocksTests;
+			packageProductDependencies = (
+			);
+			productName = xShadowsocksTests;
+			productReference = 042FC7DB2F556E1E00904641 /* xShadowsocksTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		042FC7E42F556E1E00904641 /* xShadowsocksUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 042FC7F52F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocksUITests" */;
+			buildPhases = (
+				042FC7E12F556E1E00904641 /* Sources */,
+				042FC7E22F556E1E00904641 /* Frameworks */,
+				042FC7E32F556E1E00904641 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				042FC7E72F556E1E00904641 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				042FC7E82F556E1E00904641 /* xShadowsocksUITests */,
+			);
+			name = xShadowsocksUITests;
+			packageProductDependencies = (
+			);
+			productName = xShadowsocksUITests;
+			productReference = 042FC7E52F556E1E00904641 /* xShadowsocksUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		042FC7FB2F556E6500904641 /* xPacketTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 042FC8092F556E6500904641 /* Build configuration list for PBXNativeTarget "xPacketTunnel" */;
+			buildPhases = (
+				042FC7F82F556E6500904641 /* Sources */,
+				042FC7F92F556E6500904641 /* Frameworks */,
+				042FC7FA2F556E6500904641 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				042FC8002F556E6500904641 /* xPacketTunnel */,
+			);
+			name = xPacketTunnel;
+			packageProductDependencies = (
+			);
+			productName = xPacketTunnel;
+			productReference = 042FC7FC2F556E6500904641 /* xPacketTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		042FC7C62F556E1B00904641 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					042FC7CD2F556E1B00904641 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					042FC7DA2F556E1E00904641 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 042FC7CD2F556E1B00904641;
+					};
+					042FC7E42F556E1E00904641 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 042FC7CD2F556E1B00904641;
+					};
+					042FC7FB2F556E6500904641 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+				};
+			};
+			buildConfigurationList = 042FC7C92F556E1B00904641 /* Build configuration list for PBXProject "xShadowsocks" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 042FC7C52F556E1B00904641;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 042FC7CF2F556E1B00904641 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				042FC7CD2F556E1B00904641 /* xShadowsocks */,
+				042FC7DA2F556E1E00904641 /* xShadowsocksTests */,
+				042FC7E42F556E1E00904641 /* xShadowsocksUITests */,
+				042FC7FB2F556E6500904641 /* xPacketTunnel */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		042FC7CC2F556E1B00904641 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7D92F556E1E00904641 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7E32F556E1E00904641 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7FA2F556E6500904641 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		042FC7CA2F556E1B00904641 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7D72F556E1E00904641 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7E12F556E1E00904641 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		042FC7F82F556E6500904641 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		042FC7DD2F556E1E00904641 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 042FC7CD2F556E1B00904641 /* xShadowsocks */;
+			targetProxy = 042FC7DC2F556E1E00904641 /* PBXContainerItemProxy */;
+		};
+		042FC7E72F556E1E00904641 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 042FC7CD2F556E1B00904641 /* xShadowsocks */;
+			targetProxy = 042FC7E62F556E1E00904641 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		042FC7ED2F556E1E00904641 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		042FC7EE2F556E1E00904641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		042FC7F02F556E1E00904641 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = xShadowsocks/xShadowsocks.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = xShadowsocks;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocks;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		042FC7F12F556E1E00904641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = xShadowsocks/xShadowsocks.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = xShadowsocks;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocks;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		042FC7F32F556E1E00904641 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocksTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/xShadowsocks.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/xShadowsocks";
+			};
+			name = Debug;
+		};
+		042FC7F42F556E1E00904641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocksTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/xShadowsocks.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/xShadowsocks";
+			};
+			name = Release;
+		};
+		042FC7F62F556E1E00904641 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocksUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = xShadowsocks;
+			};
+			name = Debug;
+		};
+		042FC7F72F556E1E00904641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocksUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = xShadowsocks;
+			};
+			name = Release;
+		};
+		042FC80A2F556E6500904641 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = xPacketTunnel/xPacketTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = xPacketTunnel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = xPacketTunnel;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocks.xPacketTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		042FC80B2F556E6500904641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = xPacketTunnel/xPacketTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P2XLW7B46G;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = xPacketTunnel/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = xPacketTunnel;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.iappapp.xShadowsocks.xPacketTunnel;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		042FC7C92F556E1B00904641 /* Build configuration list for PBXProject "xShadowsocks" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				042FC7ED2F556E1E00904641 /* Debug */,
+				042FC7EE2F556E1E00904641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		042FC7EF2F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocks" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				042FC7F02F556E1E00904641 /* Debug */,
+				042FC7F12F556E1E00904641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		042FC7F22F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocksTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				042FC7F32F556E1E00904641 /* Debug */,
+				042FC7F42F556E1E00904641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		042FC7F52F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocksUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				042FC7F62F556E1E00904641 /* Debug */,
+				042FC7F72F556E1E00904641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		042FC8092F556E6500904641 /* Build configuration list for PBXNativeTarget "xPacketTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				042FC80A2F556E6500904641 /* Debug */,
+				042FC80B2F556E6500904641 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 042FC7C62F556E1B00904641 /* Project object */;
+}

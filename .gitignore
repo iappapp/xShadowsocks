@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode / Swift
+DerivedData/
+build/
+*.xcuserstate
+*.moved-aside
+*.xcscmblueprint
+*.xccheckout
+
+# Per-user workspace settings
+xcuserdata/
+**/*.xcworkspace/xcuserdata/
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# Python virtual envs
+.venv/
+venv/
+**/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local env/config
+.env
+.env.*
+
+# Logs
+*.log
+
+# MMDB viewer temporary/local files
+tools/mmdb_viewer/uploads/
+tools/mmdb_viewer/*.db
