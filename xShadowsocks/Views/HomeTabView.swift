@@ -424,11 +424,13 @@ struct HomeTabView: View {
                         LabeledContent("更新时间", value: source.updatedAt.formatted(date: .abbreviated, time: .shortened))
                     }
                     Section("来源链接") {
-                        Text(source.url ?? "手动添加").font(.caption).foregroundColor(.secondary)
+                        Text(source.url)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
-            .navigationTitle("服务配置详情")
+            .navigationTitle("服务详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("完成") { showSourceInfoSheet = false }
@@ -456,7 +458,7 @@ struct HomeTabView: View {
                     }
                 }
             }
-            .navigationTitle("节点详细信息")
+            .navigationTitle("节点信息")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button("完成") { showNodeInfoSheet = false }
