@@ -4,7 +4,8 @@ import Foundation
 final class ProxySelectorService {
     private let store: AppGroupStore
     private let mihomoRuntimeManager: MihomoRuntimeManager
-    private var localProxyService: LocalTrojanProxyService
+    private var runtimeServices: [ProxyEngine: any ProxyRuntimeServiceProtocol] = [:]
+    private var activeEngine: ProxyEngine?
     private var localProxyPort: UInt16
 
     var onStatusTextChange: ((String) -> Void)?
@@ -22,24 +23,15 @@ final class ProxySelectorService {
                 .appendingPathComponent("mihomo", isDirectory: true)
         }
 
-        self.localProxyService = LocalTrojanProxyService(listenPort: localProxyPort)
         self.mihomoRuntimeManager = MihomoRuntimeManager(
             bridge: DynamicMihomoCoreBridge(),
             workingDirectoryURL: workingDirectoryURL
         )
-
-        bindLocalProxyStateChange()
-
-        let weakBox = WeakProxySelectorServiceBox(self)
-        let runtime = mihomoRuntimeManager
-
-        Task {
-            await runtime.setOnStateChange { state in
-                Task { @MainActor in
-                    weakBox.value?.handleMihomoRuntimeState(state)
-                }
-            }
-        }
+        self.runtimeServices = Self.makeRuntimeServices(
+            localProxyPort: localProxyPort,
+            runtimeManager: mihomoRuntimeManager
+        )
+        bindRuntimeStateChanges()
     }
 
     func syncPortFromSettings(isProxyEnabled: Bool) {
@@ -48,8 +40,11 @@ final class ProxySelectorService {
         guard !isProxyEnabled else { return }
 
         localProxyPort = latestPort
-        localProxyService = LocalTrojanProxyService(listenPort: localProxyPort)
-        bindLocalProxyStateChange()
+        runtimeServices = Self.makeRuntimeServices(
+            localProxyPort: localProxyPort,
+            runtimeManager: mihomoRuntimeManager
+        )
+        bindRuntimeStateChanges()
     }
 
     func setProxyEnabled(
@@ -60,134 +55,110 @@ final class ProxySelectorService {
         selectedNodeID: UUID?,
         routeMode: MihomoRouteMode
     ) async throws {
-        switch engine {
-        case .local:
-            try applyLocalProxy(enabled: enabled, selectedNode: selectedNode)
-        case .mihomo:
-            try await applyMihomoProxy(
-                enabled: enabled,
-                nodes: nodes,
-                selectedNode: selectedNode,
-                selectedNodeID: selectedNodeID,
-                routeMode: routeMode
-            )
-        }
-    }
+        let request = ProxyRuntimeRequest(
+            nodes: nodes,
+            selectedNode: selectedNode,
+            selectedNodeID: selectedNodeID,
+            routeMode: routeMode,
+            localProxyPort: localProxyPort
+        )
 
-    private func applyLocalProxy(enabled: Bool, selectedNode: ServerNode?) throws {
         if enabled {
-            guard let selectedNode else {
-                throw ProxyOrchestratorError.missingNode
+            guard selectedNode != nil else {
+                throw ProxyRuntimeRequestError.missingNode
             }
-            try localProxyService.start(
-                using: LocalDebugTrojanNode(
-                    host: selectedNode.host,
-                    port: selectedNode.port,
-                    password: selectedNode.password,
-                    sni: selectedNode.sni,
-                    type: selectedNode.nodeType
-                )
-            )
+
+            try await stopAllServices(except: engine)
+            let runtime = try service(for: engine)
+
+            if activeEngine == engine {
+                try await runtime.refreshConfig(with: request)
+            } else {
+                try await runtime.start(with: request)
+            }
+
+            activeEngine = engine
         } else {
-            localProxyService.stop()
+            try await stopAllServices(except: nil)
+            activeEngine = nil
         }
     }
 
-    private func applyMihomoProxy(
-        enabled: Bool,
+    func refreshConfig(
+        engine: ProxyEngine,
         nodes: [ServerNode],
         selectedNode: ServerNode?,
         selectedNodeID: UUID?,
         routeMode: MihomoRouteMode
     ) async throws {
-        if enabled {
-            guard selectedNode != nil else {
-                throw ProxyOrchestratorError.missingNode
-            }
-
-            localProxyService.stop()
-
-            try await mihomoRuntimeManager.start(
-                with: MihomoBootstrapRequest(
-                    nodes: nodes.map {
-                        MihomoProxyNode(
-                            id: $0.id,
-                            name: $0.name,
-                            host: $0.host,
-                            port: $0.port,
-                            password: $0.password,
-                            sni: $0.sni,
-                            type: $0.nodeType
-                        )
-                    },
-                    selectedNodeID: selectedNodeID,
-                    routeMode: routeMode,
-                    mixedPort: Int(localProxyPort),
-                    socksPort: Int(localProxyPort) + 1,
-                    externalControllerPort: 9090,
-                    externalControllerSecret: nil
-                )
+        let runtime = try service(for: engine)
+        try await runtime.refreshConfig(
+            with: ProxyRuntimeRequest(
+                nodes: nodes,
+                selectedNode: selectedNode,
+                selectedNodeID: selectedNodeID,
+                routeMode: routeMode,
+                localProxyPort: localProxyPort
             )
-        } else {
-            try await mihomoRuntimeManager.stop()
-            localProxyService.stop()
-        }
+        )
     }
 
-    private func bindLocalProxyStateChange() {
-        localProxyService.onStateChange = { [weak self] state in
-            guard let self else { return }
+    func currentState(for engine: ProxyEngine) async throws -> ProxyRuntimeState {
+        try await service(for: engine).currentState()
+    }
 
-            switch state {
-            case .stopped:
-                onStatusTextChange?("未启动")
-            case .starting:
-                onStatusTextChange?("启动中")
-            case .running:
-                onStatusTextChange?("运行中(端口 \(localProxyPort))")
-            case let .failed(message):
-                onStatusTextChange?("启动失败")
-                onFailure?(message)
+    private func bindRuntimeStateChanges() {
+        for service in runtimeServices.values {
+            service.onStateChange = { [weak self] state in
+                self?.handleRuntimeState(state)
             }
         }
     }
 
-    private func handleMihomoRuntimeState(_ state: MihomoRuntimeState) {
+    private func handleRuntimeState(_ state: ProxyRuntimeState) {
         switch state {
         case .stopped:
             onStatusTextChange?("未启动")
         case .starting:
             onStatusTextChange?("启动中")
-        case .running(let snapshot):
-            onStatusTextChange?("运行中(Mixed \(snapshot.mixedPort))")
+        case .running(let statusDetail):
+            onStatusTextChange?("运行中(\(statusDetail))")
         case .failed(let message):
             onStatusTextChange?("启动失败")
             onFailure?(message)
         }
     }
 
+    private func service(for engine: ProxyEngine) throws -> any ProxyRuntimeServiceProtocol {
+        guard let service = runtimeServices[engine] else {
+            throw NSError(
+                domain: "ProxySelectorService",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "未找到代理引擎实现: \(engine.rawValue)"]
+            )
+        }
+        return service
+    }
+
+    private func stopAllServices(except engine: ProxyEngine?) async throws {
+        for service in runtimeServices.values where engine == nil || service.engine != engine {
+            try await service.stop()
+        }
+    }
+
+    private static func makeRuntimeServices(
+        localProxyPort: UInt16,
+        runtimeManager: MihomoRuntimeManager
+    ) -> [ProxyEngine: any ProxyRuntimeServiceProtocol] {
+        [
+            .local: LocalProxyRuntimeService(listenPort: localProxyPort),
+            .mihomo: MihomoProxyRuntimeService(runtimeManager: runtimeManager)
+        ]
+    }
+
     private static func loadProxyPort(from store: AppGroupStore) -> UInt16 {
         let rawValue = store.loadInt(forKey: store.proxyPortKey, default: 7890)
         let clamped = min(max(rawValue, 2000), 9000)
         return UInt16(clamped)
-    }
-}
-
-enum ProxyOrchestratorError: LocalizedError {
-    case missingNode
-
-    var errorDescription: String? {
-        switch self {
-        case .missingNode:
-            return "请先选择一个节点"
-        }
-    }
-}
-
-private final class WeakProxySelectorServiceBox: @unchecked Sendable {
-    weak var value: ProxySelectorService?
-
-    init(_ value: ProxySelectorService?) {
-        self.value = value
     }
 }
