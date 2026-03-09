@@ -8,6 +8,10 @@ struct HomeTabView: View {
     @State private var expandedSourceIDs: Set<UUID> = []
     @State private var importURLText = ""
     @State private var importConfigName = ""
+    @State private var infoSource: ProxyConfigSource? = nil
+    @State private var infoNode: ServerNode? = nil
+    @State private var showSourceInfoSheet = false
+    @State private var showNodeInfoSheet = false
 
     @MainActor init(viewModel: HomeViewModel? = nil) {
         _viewModel = StateObject(wrappedValue: viewModel ?? HomeViewModel())
@@ -27,6 +31,14 @@ struct HomeTabView: View {
             }
             .toolbar { homeToolbar }
             .sheet(isPresented: $isPresentingImportSheet) { importSheetContent }
+            .sheet(isPresented: $showSourceInfoSheet) {
+                    sourceInfoSheet
+                    .presentationDetents([.medium, .large]) // 推荐使用中等高度
+            }
+            .sheet(isPresented: $showNodeInfoSheet) {
+                    nodeInfoSheet
+                    .presentationDetents([.medium, .large])
+            }
             .navigationDestination(isPresented: $isPresentingBrowser) {
                 ProxyBrowserView()
                     .navigationBarTitleDisplayMode(.inline)
@@ -213,26 +225,7 @@ struct HomeTabView: View {
             .buttonStyle(.plain)
 
             Divider()
-
-            Button {
-                viewModel.runConnectivityTest()
-            } label: {
-                HStack {
-                    Image(systemName: "speedometer")
-                        .foregroundStyle(.blue)
-                    Text("连通性测试")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    if viewModel.isTesting {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.isTesting)
+            // 连通性测试菜单入口已移除
         }
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -256,14 +249,16 @@ struct HomeTabView: View {
     }
 
     private func sourceHeaderButton(_ source: ProxyConfigSource) -> some View {
-        Button {
-            toggleSourceExpansion(source)
-        } label: {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: expandedSourceIDs.contains(source.id) ? "chevron.down" : "chevron.right")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.blue)
-                    .frame(width: 24)
+                Button {
+                    toggleSourceExpansion(source)
+                } label: {
+                    Image(systemName: expandedSourceIDs.contains(source.id) ? "chevron.down" : "chevron.right")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.blue)
+                        .frame(width: 24)
+                }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(source.name)
@@ -273,14 +268,30 @@ struct HomeTabView: View {
 
                 Spacer()
 
-                Image(systemName: "info.circle")
-                    .font(.title3)
-                    .foregroundStyle(.blue)
+                // 连通性测试按钮
+                Button {
+                    viewModel.runConnectivityTest()
+                } label: {
+                    Image(systemName: "speedometer")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isTesting)
+                .padding(.trailing, 4)
+
+                Button {
+                    infoSource = source
+                    showSourceInfoSheet = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                        .foregroundStyle(.blue)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 14)
         }
-        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 withAnimation {
@@ -294,11 +305,11 @@ struct HomeTabView: View {
     }
 
     private func nodeRow(_ node: ServerNode, in source: ProxyConfigSource) -> some View {
-        Button {
-            viewModel.selectSource(source)
-            viewModel.selectNode(node)
-        } label: {
-            HStack(spacing: 10) {
+        HStack(spacing: 10) {
+            Button {
+                viewModel.selectSource(source)
+                viewModel.selectNode(node)
+            } label: {
                 if isNodeSelected(node, in: source) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.body)
@@ -309,37 +320,42 @@ struct HomeTabView: View {
                         .fill(Color.orange)
                         .frame(width: 10, height: 10)
                 }
+            }
 
-                Text(nodeBadgeFlag(node))
-                    .font(.title2)
-                    .frame(width: 34, height: 30)
-                    .background(Color(.tertiarySystemBackground))
-                    .clipShape(Circle())
+            Text(nodeBadgeFlag(node))
+                .font(.title2)
+                .frame(width: 34, height: 30)
+                .background(Color(.tertiarySystemBackground))
+                .clipShape(Circle())
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(nodeDisplayName(node))
-                        .font(.title3)
-                        .foregroundStyle(.primary)
-
-                    Text(nodeProtocolSubtitle(node))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(node.latencyText)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(nodeDisplayName(node))
                     .font(.title3)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(.primary)
 
+                Text(nodeProtocolSubtitle(node))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(node.latencyText)
+                .font(.title3)
+                .foregroundStyle(.green)
+
+            Button {
+                infoNode = node
+                showNodeInfoSheet = true
+            } label: {
                 Image(systemName: "info.circle")
                     .font(.title3)
                     .foregroundStyle(.blue)
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 30, maxHeight: 50)
-            .background(isNodeSelected(node, in: source) ? Color.blue.opacity(0.08) : Color.clear)
         }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 30, maxHeight: 50)
+        .background(isNodeSelected(node, in: source) ? Color.blue.opacity(0.08) : Color.clear)
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -396,6 +412,56 @@ struct HomeTabView: View {
 
     private func isNodeSelected(_ node: ServerNode, in source: ProxyConfigSource) -> Bool {
         viewModel.selectedSourceID == source.id && viewModel.selectedNodeID == node.id
+    }
+
+    private var sourceInfoSheet: some View {
+        NavigationStack {
+            List {
+                if let source = infoSource {
+                    Section("基础信息") {
+                        LabeledContent("配置名称", value: source.name)
+                        LabeledContent("节点数量", value: "\(source.nodes.count)")
+                        LabeledContent("更新时间", value: source.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    Section("来源链接") {
+                        Text(source.url ?? "手动添加").font(.caption).foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("服务配置详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("完成") { showSourceInfoSheet = false }
+            }
+        }
+    }
+
+    private var nodeInfoSheet: some View {
+        NavigationStack {
+            List {
+                if let node = infoNode {
+                    Section("节点属性") {
+                        LabeledContent("名称", value: node.name)
+                        LabeledContent("协议", value: node.nodeType.uppercased())
+                        LabeledContent("加密", value: node.method ?? "None")
+                    }
+                    Section("网络配置") {
+                        LabeledContent("服务器", value: node.host)
+                        LabeledContent("端口", value: "\(node.port)")
+                        LabeledContent("SNI", value: node.sni ?? "自动")
+                    }
+                    Section("安全凭据") {
+                        SecureField("密码", text: .constant(node.password))
+                            .disabled(true)
+                    }
+                }
+            }
+            .navigationTitle("节点详细信息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                Button("完成") { showNodeInfoSheet = false }
+            }
+        }
     }
 }
 
