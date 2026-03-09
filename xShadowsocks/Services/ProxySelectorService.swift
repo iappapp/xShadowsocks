@@ -144,7 +144,7 @@ final class ProxySelectorService {
             case .starting:
                 onStatusTextChange?("启动中")
             case .running:
-                onStatusTextChange?("运行中 (端口 \(localProxyPort))")
+                onStatusTextChange?("运行中(端口 \(localProxyPort))")
             case let .failed(message):
                 onStatusTextChange?("启动失败")
                 onFailure?(message)
@@ -159,7 +159,7 @@ final class ProxySelectorService {
         case .starting:
             onStatusTextChange?("启动中")
         case .running(let snapshot):
-            onStatusTextChange?("运行中 (Mixed \(snapshot.mixedPort))")
+            onStatusTextChange?("运行中(Mixed \(snapshot.mixedPort))")
         case .failed(let message):
             onStatusTextChange?("启动失败")
             onFailure?(message)

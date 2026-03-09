@@ -31,11 +31,11 @@ final class HomeViewModel: ObservableObject {
 
         guard !isPreviewMode else { return }
 
-        let orchestrator = ProxySelectorService(store: store)
-        orchestrator.onStatusTextChange = { [weak self] text in
+        let selectorService = ProxySelectorService(store: store)
+        selectorService.onStatusTextChange = { [weak self] text in
             self?.localProxyStatusText = text
         }
-        orchestrator.onFailure = { [weak self] message in
+        selectorService.onFailure = { [weak self] message in
             guard let self else { return }
             self.proxyErrorMessage = message
             self.showProxyError = true
@@ -43,7 +43,7 @@ final class HomeViewModel: ObservableObject {
             self.isProxyEnabled = false
             self.isSyncingProxyState = false
         }
-        self.proxySelectorService = orchestrator
+        self.proxySelectorService = selectorService
     }
 
     var selectedNode: ServerNode? {
