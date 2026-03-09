@@ -85,7 +85,7 @@ struct HomeTabView: View {
                         localDevelopmentStatus
                             .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
                             .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                            .listRowSeparator(.automatic)
                     }
                 }
 
@@ -112,7 +112,9 @@ struct HomeTabView: View {
 
     private var localDevelopmentStatus: some View {
         Text("\(viewModel.proxyEngineTitle)：\(viewModel.localProxyStatusText)")
-            .font(.footnote)
+            .font(.title3)
+            .bold()
+            .padding(.horizontal, 14)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -259,6 +261,7 @@ struct HomeTabView: View {
                         .foregroundStyle(.blue)
                         .frame(width: 24)
                 }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(source.name)
@@ -288,9 +291,11 @@ struct HomeTabView: View {
                         .font(.title3)
                         .foregroundStyle(.blue)
                 }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
@@ -316,9 +321,6 @@ struct HomeTabView: View {
                         .foregroundStyle(.blue)
                         .frame(width: 12, height: 12)
                 } else {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 10, height: 10)
                 }
             }
 
@@ -337,6 +339,11 @@ struct HomeTabView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                viewModel.selectSource(source)
+                viewModel.selectNode(node)
+            }
 
             Spacer()
 
@@ -351,7 +358,10 @@ struct HomeTabView: View {
                 Image(systemName: "info.circle")
                     .font(.title3)
                     .foregroundStyle(.blue)
+                    .padding(.leading, 10)
+                    .padding(.vertical, 4)
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 30, maxHeight: 50)
