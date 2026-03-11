@@ -51,9 +51,9 @@ struct HomeTabView: View {
                 expandedSourceIDs.insert(newValue)
             }
             .alert("全局路由", isPresented: $showRouteModeHint) {
-                Button("知道了", role: .cancel) {}
+                Button("已知晓", role: .cancel) {}
             } message: {
-                Text("全局路由模式已迁移到“设置”页面中修改。")
+                Text("全局路由模式“设置”页面中修改")
             }
             .alert("代理操作失败", isPresented: $viewModel.showProxyError) {
                 Button("确定", role: .cancel) {}
@@ -85,7 +85,7 @@ struct HomeTabView: View {
                         localDevelopmentStatus
                             .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
                             .listRowBackground(Color.clear)
-                            .listRowSeparator(.automatic)
+                            .listRowSeparator(.hidden)
                     }
                 }
 
@@ -112,9 +112,7 @@ struct HomeTabView: View {
 
     private var localDevelopmentStatus: some View {
         Text("\(viewModel.proxyEngineTitle)：\(viewModel.localProxyStatusText)")
-            .font(.title3)
-            .bold()
-            .padding(.horizontal, 14)
+            .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -292,6 +290,7 @@ struct HomeTabView: View {
                         .foregroundStyle(.blue)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 14)
@@ -321,8 +320,14 @@ struct HomeTabView: View {
                         .foregroundStyle(.blue)
                         .frame(width: 12, height: 12)
                 } else {
+                    Image(systemName: "circle")
+                        .frame(width: 12, height: 12)
+                        .opacity(1)
                 }
             }
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            
 
             Text(nodeBadgeFlag(node))
                 .font(.title2)
@@ -333,16 +338,10 @@ struct HomeTabView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(nodeDisplayName(node))
                     .font(.title3)
-                    .foregroundStyle(.primary)
 
                 Text(nodeProtocolSubtitle(node))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                viewModel.selectSource(source)
-                viewModel.selectNode(node)
             }
 
             Spacer()
@@ -351,22 +350,23 @@ struct HomeTabView: View {
                 .font(.title3)
                 .foregroundStyle(.green)
 
-            Button {
-                infoNode = node
-                showNodeInfoSheet = true
-            } label: {
-                Image(systemName: "info.circle")
-                    .font(.title3)
-                    .foregroundStyle(.blue)
-                    .padding(.leading, 10)
-                    .padding(.vertical, 4)
-            }
-            .buttonStyle(.plain)
+            Image(systemName: "info.circle")
+                .font(.title3)
+                .foregroundStyle(.blue)
+                .onTapGesture {
+                    infoNode = node;
+                    showNodeInfoSheet = true
+                }
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 30, maxHeight: 50)
         .background(isNodeSelected(node, in: source) ? Color.blue.opacity(0.08) : Color.clear)
         .buttonStyle(.plain)
+        // 整行点击
+        .onTapGesture {
+            viewModel.selectSource(source)
+            viewModel.selectNode(node)
+        }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 withAnimation {
