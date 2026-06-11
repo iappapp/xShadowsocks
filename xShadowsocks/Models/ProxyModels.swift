@@ -11,6 +11,13 @@ struct ServerNode: Identifiable, Equatable, Codable {
     var method: String?
     var sni: String?
     var latency: Int?
+    var flow: String?
+    var encryption: String?
+    var network: String?          // VLESS 传输类型 (tcp, ws, grpc, h2 等)
+    var publicKey: String?        // VLESS Reality 公钥 (pbk)
+    var shortId: String?          // VLESS Reality 短ID (sid)
+    var serviceName: String?      // gRPC 服务名称或 WebSocket 路径
+    var headers: [String: String]? // HTTP 头部信息
 
     init(
         id: UUID = UUID(),
@@ -21,7 +28,14 @@ struct ServerNode: Identifiable, Equatable, Codable {
         nodeType: String = "shadowsocks",
         method: String? = nil,
         sni: String? = nil,
-        latency: Int?
+        latency: Int?,
+        flow: String? = nil,
+        encryption: String? = nil,
+        network: String? = nil,
+        publicKey: String? = nil,
+        shortId: String? = nil,
+        serviceName: String? = nil,
+        headers: [String: String]? = nil
     ) {
         self.id = id
         self.name = name
@@ -32,6 +46,13 @@ struct ServerNode: Identifiable, Equatable, Codable {
         self.method = method
         self.sni = sni
         self.latency = latency
+        self.flow = flow
+        self.encryption = encryption
+        self.network = network
+        self.publicKey = publicKey
+        self.shortId = shortId
+        self.serviceName = serviceName
+        self.headers = headers
     }
 
     var latencyText: String {

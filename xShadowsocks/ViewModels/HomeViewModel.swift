@@ -145,15 +145,35 @@ final class HomeViewModel: ObservableObject {
                 for node in currentNodes {
                     group.addTask {
                         do {
-                            let latency = try await LocalTrojanProxyService.measureConnectivity(
-                                using: LocalDebugTrojanNode(
-                                    host: node.host,
-                                    port: node.port,
-                                    password: node.password,
-                                    sni: node.sni,
-                                    type: node.nodeType
+                            let latency: Int
+                            switch node.nodeType.lowercased() {
+                            case "vless":
+                                latency = try await LocalVlessProxyService.measureConnectivity(
+                                    using: LocalDebugVlessNode(
+                                        host: node.host,
+                                        port: node.port,
+                                        uuid: node.password,
+                                        sni: node.sni,
+                                        type: node.nodeType,
+                                        flow: node.flow,
+                                        encryption: node.encryption,
+                                        publicKey: node.publicKey,
+                                        shortId: node.shortId,
+                                        network: node.network,
+                                        serviceName: node.serviceName
+                                    )
                                 )
-                            )
+                            default:
+                                latency = try await LocalTrojanProxyService.measureConnectivity(
+                                    using: LocalDebugTrojanNode(
+                                        host: node.host,
+                                        port: node.port,
+                                        password: node.password,
+                                        sni: node.sni,
+                                        type: node.nodeType
+                                    )
+                                )
+                            }
                             return (node.id, latency)
                         } catch {
                             return (node.id, -1)

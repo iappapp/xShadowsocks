@@ -2,12 +2,13 @@ import Foundation
 
 // MARK: - Subscription payload dispatch + Base64 decoding
 //
-// Two-path dispatch:
-//   Path A – Base64 decode succeeds → decoded text is a trojan:// URI list
-//   Path B – Base64 decode fails    → raw payload is a full mihomo YAML config file
+// Three-path dispatch:
+//   Path A – Raw payload looks like YAML (starts with 'proxies:', 'proxy-providers:', etc.) → parse as YAML directly
+//   Path B – Base64 decode succeeds → decoded text is a trojan:// URI list
+//   Path C – Base64 decode fails    → raw payload is a full mihomo YAML config file
 //
 // Consumers should use SubscriptionPayloadParser.parse(_:) and inspect the
-// returned ParseResult; rawYAML is non-nil only for Path B.
+// returned ParseResult; rawYAML is non-nil only for Path C.
 
 enum SubscriptionContentParser {
     struct ParseResult {
@@ -18,17 +19,55 @@ enum SubscriptionContentParser {
     }
 
     static func parse(_ payload: String) -> ParseResult {
-        // Path A: Base64-encoded trojan:// URI list
-        if let decoded = decodeBase64(payload) {
+        let trimmedPayload = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Path A: Check if raw payload looks like a YAML config file
+        if isYAMLFormat(trimmedPayload) {
+            let yamlNodes = MihomoYAMLConfigParser.parseProxies(from: trimmedPayload)
+            return ParseResult(nodes: yamlNodes, rawYAML: yamlNodes.isEmpty ? nil : trimmedPayload)
+        }
+        
+        // Path B: Base64-encoded trojan:// URI list
+        if let decoded = decodeBase64(trimmedPayload) {
             let nodes = TrojanURIParser.parse(decoded)
             if !nodes.isEmpty {
                 return ParseResult(nodes: nodes, rawYAML: nil)
             }
         }
 
-        // Path B: Full mihomo YAML config file
-        let yamlNodes = MihomoYAMLConfigParser.parseProxies(from: payload)
-        return ParseResult(nodes: yamlNodes, rawYAML: yamlNodes.isEmpty ? nil : payload)
+        // Path C: Full mihomo YAML config file
+        let yamlNodes = MihomoYAMLConfigParser.parseProxies(from: trimmedPayload)
+        return ParseResult(nodes: yamlNodes, rawYAML: yamlNodes.isEmpty ? nil : trimmedPayload)
+    }
+
+    // MARK: - YAML format detection
+    
+    /// Checks if the payload looks like a YAML configuration file
+    private static func isYAMLFormat(_ payload: String) -> Bool {
+        let lowercased = payload.lowercased()
+        
+        // Look for common YAML configuration keys in Clash/Mihomo configs
+        let yamlIndicators = [
+            "proxies:",
+            "proxy-providers:",
+            "proxy-groups:",
+            "rule-providers:",
+            "rules:",
+            "payload:"
+        ]
+        
+        for indicator in yamlIndicators {
+            if lowercased.contains(indicator) {
+                return true
+            }
+        }
+        
+        // Check for YAML document start marker
+        if payload.hasPrefix("---") {
+            return true
+        }
+        
+        return false
     }
 
     // MARK: - Base64 helper
