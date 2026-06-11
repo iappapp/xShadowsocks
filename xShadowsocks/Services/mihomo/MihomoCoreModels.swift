@@ -29,8 +29,15 @@ struct MihomoProxyNode: Identifiable, Equatable, Sendable {
     let password: String
     let sni: String?
     let type: String
-
-    init(id: UUID = UUID(), name: String, host: String, port: Int, password: String, sni: String?, type: String) {
+    let flow: String?
+    let encryption: String?
+    // VLESS + Reality 特定参数
+    let network: String?
+    let realityOpts: RealityOpts?
+    let serviceName: String?
+    let headers: [String: String]?
+    
+    init(id: UUID = UUID(), name: String, host: String, port: Int, password: String, sni: String?, type: String, flow: String? = nil, encryption: String? = nil, network: String? = nil, realityOpts: RealityOpts? = nil, serviceName: String? = nil, headers: [String: String]? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -38,6 +45,29 @@ struct MihomoProxyNode: Identifiable, Equatable, Sendable {
         self.password = password
         self.sni = sni
         self.type = type
+        self.flow = flow
+        self.encryption = encryption
+        self.network = network
+        self.realityOpts = realityOpts
+        self.serviceName = serviceName
+        self.headers = headers
+    }
+}
+
+// Reality 选项结构体
+struct RealityOpts: Equatable, Sendable, Codable {
+    let publicKey: String?
+    let shortId: String?
+    let spiderX: String?
+    let fingerprint: String?
+    let serverName: String?
+    
+    init(publicKey: String? = nil, shortId: String? = nil, spiderX: String? = nil, fingerprint: String? = nil, serverName: String? = nil) {
+        self.publicKey = publicKey
+        self.shortId = shortId
+        self.spiderX = spiderX
+        self.fingerprint = fingerprint
+        self.serverName = serverName
     }
 }
 

@@ -98,16 +98,26 @@ struct MihomoConfigBuilder {
     }
 
     private func makeProxyEntry(from node: MihomoProxyNode) throws -> [String] {
-        guard node.type.lowercased() == "trojan" else {
+        let type = node.type.lowercased()
+        guard type == "trojan" || type == "vless" else {
             throw MihomoRuntimeError.unsupportedNodeType(node.type)
         }
 
         var lines: [String] = []
         lines.append("  - name: \(quoted(node.name))")
-        lines.append("    type: trojan")
+        lines.append("    type: \(type)")
         lines.append("    server: \(quoted(node.host))")
         lines.append("    port: \(node.port)")
-        lines.append("    password: \(quoted(node.password))")
+
+        if type == "vless" {
+            // VLESS uses UUID as the password field
+            lines.append("    uuid: \(quoted(node.password))")
+            // Note: Advanced properties like flow, encryption, network, etc. 
+            // have been removed because they do not exist on MihomoProxyNode.
+        } else {
+            lines.append("    password: \(quoted(node.password))")
+        }
+
         if let sni = node.sni, !sni.isEmpty {
             lines.append("    sni: \(quoted(sni))")
         }

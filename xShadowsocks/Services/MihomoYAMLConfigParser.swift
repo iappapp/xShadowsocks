@@ -38,6 +38,8 @@ enum MihomoYAMLConfigParser {
             let type     = currentFields["type"]?.trimmed     ?? "shadowsocks"
             let method   = currentFields["cipher"]?.trimmed ?? currentFields["method"]?.trimmed
             let sni      = currentFields["sni"]?.trimmed
+            let flow     = currentFields["flow"]?.trimmed
+            let encryption = currentFields["encryption"]?.trimmed
 
             guard !name.isEmpty, !host.isEmpty, !password.isEmpty else { return }
 
@@ -50,7 +52,9 @@ enum MihomoYAMLConfigParser {
                     nodeType: type,
                     method: method,
                     sni: sni,
-                    latency: nil
+                    latency: nil,
+                    flow: flow,
+                    encryption: encryption
                 )
             )
         }
