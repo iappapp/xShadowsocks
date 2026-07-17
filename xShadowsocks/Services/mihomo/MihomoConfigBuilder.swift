@@ -112,21 +112,59 @@ struct MihomoConfigBuilder {
         if type == "vless" {
             // VLESS uses UUID as the password field
             lines.append("    uuid: \(quoted(node.password))")
-            // Note: Advanced properties like flow, encryption, network, etc. 
-            // have been removed because they do not exist on MihomoProxyNode.
+            if let flow = node.flow, !flow.isEmpty {
+                lines.append("    flow: \(flow)")
+            }
+            if let network = node.network, !network.isEmpty {
+                lines.append("    network: \(network)")
+            }
+            if node.tls == true || node.realityOpts != nil || hasValue(node.sni) {
+                lines.append("    tls: true")
+            } else if node.tls == false {
+                lines.append("    tls: false")
+            }
+            if let sni = node.sni, !sni.isEmpty {
+                lines.append("    servername: \(quoted(sni))")
+            }
+            if let clientFingerprint = node.clientFingerprint, !clientFingerprint.isEmpty {
+                lines.append("    client-fingerprint: \(clientFingerprint)")
+            }
+            if let realityOpts = node.realityOpts,
+               hasValue(realityOpts.publicKey) || hasValue(realityOpts.shortId) {
+                lines.append("    reality-opts:")
+                if let publicKey = realityOpts.publicKey, !publicKey.isEmpty {
+                    lines.append("      public-key: \(quoted(publicKey))")
+                }
+                if let shortId = realityOpts.shortId, !shortId.isEmpty {
+                    lines.append("      short-id: \(quoted(shortId))")
+                }
+            }
+            if let serviceName = node.serviceName, !serviceName.isEmpty {
+                if node.network?.lowercased() == "grpc" {
+                    lines.append("    grpc-opts:")
+                    lines.append("      grpc-service-name: \(quoted(serviceName))")
+                } else if node.network?.lowercased() == "ws" {
+                    lines.append("    ws-opts:")
+                    lines.append("      path: \(quoted(serviceName))")
+                }
+            }
         } else {
             lines.append("    password: \(quoted(node.password))")
-        }
-
-        if let sni = node.sni, !sni.isEmpty {
-            lines.append("    sni: \(quoted(sni))")
+            if let sni = node.sni, !sni.isEmpty {
+                lines.append("    sni: \(quoted(sni))")
+            }
         }
         lines.append("    udp: true")
-        lines.append("    skip-cert-verify: true")
+        lines.append("    skip-cert-verify: \(node.skipCertVerify ?? true)")
         return lines
     }
 
     private func quoted(_ value: String) -> String {
         "\"\(value.replacingOccurrences(of: "\\\"", with: "\\\\\\\""))\""
+    }
+
+    private func hasValue(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

@@ -31,13 +31,16 @@ struct MihomoProxyNode: Identifiable, Equatable, Sendable {
     let type: String
     let flow: String?
     let encryption: String?
+    let tls: Bool?
+    let skipCertVerify: Bool?
     // VLESS + Reality 特定参数
     let network: String?
     let realityOpts: RealityOpts?
     let serviceName: String?
+    let clientFingerprint: String?
     let headers: [String: String]?
     
-    init(id: UUID = UUID(), name: String, host: String, port: Int, password: String, sni: String?, type: String, flow: String? = nil, encryption: String? = nil, network: String? = nil, realityOpts: RealityOpts? = nil, serviceName: String? = nil, headers: [String: String]? = nil) {
+    init(id: UUID = UUID(), name: String, host: String, port: Int, password: String, sni: String?, type: String, flow: String? = nil, encryption: String? = nil, tls: Bool? = nil, skipCertVerify: Bool? = nil, network: String? = nil, realityOpts: RealityOpts? = nil, serviceName: String? = nil, clientFingerprint: String? = nil, headers: [String: String]? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -47,9 +50,12 @@ struct MihomoProxyNode: Identifiable, Equatable, Sendable {
         self.type = type
         self.flow = flow
         self.encryption = encryption
+        self.tls = tls
+        self.skipCertVerify = skipCertVerify
         self.network = network
         self.realityOpts = realityOpts
         self.serviceName = serviceName
+        self.clientFingerprint = clientFingerprint
         self.headers = headers
     }
 }
@@ -164,6 +170,7 @@ enum MihomoRuntimeError: LocalizedError {
     case missingSelectedNode
     case unsupportedNodeType(String)
     case emptyNodeList
+    case missingConfigFile
     case bridgeNotReady
 
     var errorDescription: String? {
@@ -174,6 +181,8 @@ enum MihomoRuntimeError: LocalizedError {
             return "Mihomo 模式暂不支持节点类型: \(type)"
         case .emptyNodeList:
             return "节点列表为空"
+        case .missingConfigFile:
+            return "未找到配置文件 default.conf，请先导入订阅或配置"
         case .bridgeNotReady:
             return "Mihomo Core 未就绪：请检查 xcframework 是否 Embed & Sign 且已导出 mihomo_* 符号"
         }

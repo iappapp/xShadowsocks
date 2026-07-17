@@ -23,7 +23,7 @@ struct ProxyBrowserView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var loadTrigger = UUID()
-    @State private var proxyPort: Int = ProxyBrowserView.loadConfiguredProxyPort()
+    @State private var proxyEndpoint = ProxyBrowserView.loadConfiguredProxyEndpoint()
     let proxyHost: String = "127.0.0.1"
 
     var body: some View {
@@ -51,7 +51,8 @@ struct ProxyBrowserView: View {
                     errorMessage: $errorMessage,
                     loadTrigger: loadTrigger,
                     proxyHost: proxyHost,
-                    proxyPort: proxyPort
+                    proxyPort: proxyEndpoint.port,
+                    proxyKind: proxyEndpoint.kind
                 )
                 .edgesIgnoringSafeArea(.bottom)
 
@@ -78,13 +79,18 @@ struct ProxyBrowserView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            proxyPort = Self.loadConfiguredProxyPort()
+            proxyEndpoint = Self.loadConfiguredProxyEndpoint()
         }
     }
 
-    private static func loadConfiguredProxyPort() -> Int {
+    private static func loadConfiguredProxyEndpoint() -> (port: Int, kind: MihomoConfigFileStore.ProxyKind) {
+        // Prefer the port from saved mihomo config (actual listener), then settings.
+        let fromConfig = MihomoConfigFileStore.readProxyEndpoint(defaultPort: 0)
+        if fromConfig.port > 0 {
+            return fromConfig
+        }
         let rawValue = AppGroupStore.shared.loadInt(forKey: AppGroupStore.shared.proxyPortKey, default: 7890)
-        return min(max(rawValue, 2000), 9000)
+        return (min(max(rawValue, 2000), 9000), .httpConnect)
     }
 
     private func go() {
@@ -122,6 +128,7 @@ struct ProxyWebView: UIViewRepresentable {
     let loadTrigger: UUID
     let proxyHost: String
     let proxyPort: Int
+    let proxyKind: MihomoConfigFileStore.ProxyKind
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -212,7 +219,13 @@ struct ProxyWebView: UIViewRepresentable {
             host: NWEndpoint.Host(proxyHost),
             port: nwPort
         )
-        let proxyConfig = ProxyConfiguration(httpCONNECTProxy: proxyEndpoint)
+        let proxyConfig: ProxyConfiguration
+        switch proxyKind {
+        case .httpConnect:
+            proxyConfig = ProxyConfiguration(httpCONNECTProxy: proxyEndpoint)
+        case .socks5:
+            proxyConfig = ProxyConfiguration(socksv5Proxy: proxyEndpoint)
+        }
 
         let dataStore = WKWebsiteDataStore.nonPersistent()
         dataStore.proxyConfigurations = [proxyConfig]

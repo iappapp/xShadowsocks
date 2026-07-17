@@ -12,7 +12,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var allowLANAccess = false
     @Published var preferIPv6 = false
     @Published var routeMode: RouteMode = .configuration
-    @Published var proxyEngine: ProxyEngine = .mihomo
     @Published var proxyPortText = "7890"
 
     @Published var isUpdatingSubscription = false
@@ -75,8 +74,6 @@ final class SettingsViewModel: ObservableObject {
         preferIPv6 = store.loadBool(forKey: Keys.preferIPv6, default: false)
         let savedRouteModeRawValue = store.loadString(forKey: store.routeModeKey, default: RouteMode.configuration.rawValue)
         routeMode = RouteMode(rawValue: savedRouteModeRawValue) ?? .configuration
-        let savedEngineRawValue = store.loadString(forKey: store.proxyEngineKey, default: ProxyEngine.mihomo.rawValue)
-        proxyEngine = ProxyEngine(rawValue: savedEngineRawValue) ?? .mihomo
         proxyPortText = "\(store.loadInt(forKey: store.proxyPortKey, default: defaultProxyPort))"
         handleProxyPortInputChange(proxyPortText)
     }
@@ -93,7 +90,6 @@ final class SettingsViewModel: ObservableObject {
         store.saveValue(allowLANAccess, forKey: Keys.allowLan)
         store.saveValue(preferIPv6, forKey: Keys.preferIPv6)
         store.saveValue(routeMode.rawValue, forKey: store.routeModeKey)
-        store.saveValue(proxyEngine.rawValue, forKey: store.proxyEngineKey)
         store.saveValue(resolvedProxyPort, forKey: store.proxyPortKey)
     }
 
@@ -145,7 +141,6 @@ final class SettingsViewModel: ObservableObject {
         allowLANAccess = false
         preferIPv6 = false
         routeMode = .configuration
-        proxyEngine = .mihomo
         proxyPortText = "\(defaultProxyPort)"
         updateMessage = "已恢复默认设置"
         persist()
@@ -164,7 +159,6 @@ extension SettingsViewModel {
         viewModel.allowLANAccess = true
         viewModel.preferIPv6 = false
         viewModel.routeMode = .proxy
-        viewModel.proxyEngine = .mihomo
         viewModel.proxyPortText = "7890"
         viewModel.updateMessage = "订阅更新成功"
         return viewModel

@@ -24,7 +24,8 @@ enum SubscriptionContentParser {
         // Path A: Check if raw payload looks like a YAML config file
         if isYAMLFormat(trimmedPayload) {
             let yamlNodes = MihomoYAMLConfigParser.parseProxies(from: trimmedPayload)
-            return ParseResult(nodes: yamlNodes, rawYAML: yamlNodes.isEmpty ? nil : trimmedPayload)
+            // Always keep the downloaded YAML for runtime; nodes are for Home UI only.
+            return ParseResult(nodes: yamlNodes, rawYAML: trimmedPayload)
         }
         
         // Path B: Base64-encoded trojan:// URI list
@@ -37,7 +38,10 @@ enum SubscriptionContentParser {
 
         // Path C: Full mihomo YAML config file
         let yamlNodes = MihomoYAMLConfigParser.parseProxies(from: trimmedPayload)
-        return ParseResult(nodes: yamlNodes, rawYAML: yamlNodes.isEmpty ? nil : trimmedPayload)
+        return ParseResult(
+            nodes: yamlNodes,
+            rawYAML: yamlNodes.isEmpty ? nil : trimmedPayload
+        )
     }
 
     // MARK: - YAML format detection

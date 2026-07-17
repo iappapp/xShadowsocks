@@ -1,0 +1,4 @@
+framework module MihomoCore {
+  header "MihomoBridge.h"
+  export *
+}

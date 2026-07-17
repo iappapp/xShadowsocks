@@ -114,13 +114,7 @@ final class ConfigViewModel: ObservableObject {
     }
 
     private func writeConfigFile(contents: String) throws {
-        let fileURL = defaultConfigFileURL()
-        let directoryURL = fileURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        guard let data = contents.data(using: .utf8) else {
-            throw NSError(domain: "ConfigViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "配置内容编码失败"])
-        }
-        try data.write(to: fileURL, options: .atomic)
+        try MihomoConfigFileStore.save(contents)
     }
 
     private func defaultConfigFileURL() -> URL {
