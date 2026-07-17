@@ -9,7 +9,6 @@ final class AppGroupStore {
     let trafficUploadBytesKey = "traffic_upload_bytes"
     let trafficDownloadBytesKey = "traffic_download_bytes"
     let routeModeKey = "settings.routing.mode"
-    let proxyEngineKey = "settings.proxy.engine"
     let proxyPortKey = "settings.proxy.port"
 
     private var defaults: UserDefaults? {

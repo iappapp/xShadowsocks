@@ -4,9 +4,9 @@ import Foundation
 final class ProxySelectorService {
     private let store: AppGroupStore
     private let mihomoRuntimeManager: MihomoRuntimeManager
-    private var runtimeServices: [ProxyEngine: any ProxyRuntimeServiceProtocol] = [:]
-    private var activeEngine: ProxyEngine?
+    private let runtimeService: MihomoProxyRuntimeService
     private var localProxyPort: UInt16
+    private var isRunning = false
 
     var onStatusTextChange: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
@@ -27,10 +27,7 @@ final class ProxySelectorService {
             bridge: DynamicMihomoCoreBridge(),
             workingDirectoryURL: workingDirectoryURL
         )
-        self.runtimeServices = Self.makeRuntimeServices(
-            localProxyPort: localProxyPort,
-            runtimeManager: mihomoRuntimeManager
-        )
+        self.runtimeService = MihomoProxyRuntimeService(runtimeManager: mihomoRuntimeManager)
         bindRuntimeStateChanges()
     }
 
@@ -38,18 +35,11 @@ final class ProxySelectorService {
         let latestPort = Self.loadProxyPort(from: store)
         guard latestPort != localProxyPort else { return }
         guard !isProxyEnabled else { return }
-
         localProxyPort = latestPort
-        runtimeServices = Self.makeRuntimeServices(
-            localProxyPort: localProxyPort,
-            runtimeManager: mihomoRuntimeManager
-        )
-        bindRuntimeStateChanges()
     }
 
     func setProxyEnabled(
         enabled: Bool,
-        engine: ProxyEngine,
         nodes: [ServerNode],
         selectedNode: ServerNode?,
         selectedNodeID: UUID?,
@@ -64,35 +54,25 @@ final class ProxySelectorService {
         )
 
         if enabled {
-            guard selectedNode != nil else {
-                throw ProxyRuntimeRequestError.missingNode
-            }
-
-            try await stopAllServices(except: engine)
-            let runtime = try service(for: engine)
-
-            if activeEngine == engine {
-                try await runtime.refreshConfig(with: request)
+            if isRunning {
+                try await runtimeService.refreshConfig(with: request)
             } else {
-                try await runtime.start(with: request)
+                try await runtimeService.start(with: request)
             }
-
-            activeEngine = engine
+            isRunning = true
         } else {
-            try await stopAllServices(except: nil)
-            activeEngine = nil
+            try await runtimeService.stop()
+            isRunning = false
         }
     }
 
     func refreshConfig(
-        engine: ProxyEngine,
         nodes: [ServerNode],
         selectedNode: ServerNode?,
         selectedNodeID: UUID?,
         routeMode: MihomoRouteMode
     ) async throws {
-        let runtime = try service(for: engine)
-        try await runtime.refreshConfig(
+        try await runtimeService.refreshConfig(
             with: ProxyRuntimeRequest(
                 nodes: nodes,
                 selectedNode: selectedNode,
@@ -103,15 +83,13 @@ final class ProxySelectorService {
         )
     }
 
-    func currentState(for engine: ProxyEngine) async throws -> ProxyRuntimeState {
-        try await service(for: engine).currentState()
+    func currentState() async -> ProxyRuntimeState {
+        await runtimeService.currentState()
     }
 
     private func bindRuntimeStateChanges() {
-        for service in runtimeServices.values {
-            service.onStateChange = { [weak self] state in
-                self?.handleRuntimeState(state)
-            }
+        runtimeService.onStateChange = { [weak self] state in
+            self?.handleRuntimeState(state)
         }
     }
 
@@ -127,33 +105,6 @@ final class ProxySelectorService {
             onStatusTextChange?("启动失败")
             onFailure?(message)
         }
-    }
-
-    private func service(for engine: ProxyEngine) throws -> any ProxyRuntimeServiceProtocol {
-        guard let service = runtimeServices[engine] else {
-            throw NSError(
-                domain: "ProxySelectorService",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "未找到代理引擎实现: \(engine.rawValue)"]
-            )
-        }
-        return service
-    }
-
-    private func stopAllServices(except engine: ProxyEngine?) async throws {
-        for service in runtimeServices.values where engine == nil || service.engine != engine {
-            try await service.stop()
-        }
-    }
-
-    private static func makeRuntimeServices(
-        localProxyPort: UInt16,
-        runtimeManager: MihomoRuntimeManager
-    ) -> [ProxyEngine: any ProxyRuntimeServiceProtocol] {
-        [
-            .local: LocalProxyRuntimeService(listenPort: localProxyPort),
-            .mihomo: MihomoProxyRuntimeService(runtimeManager: runtimeManager)
-        ]
     }
 
     private static func loadProxyPort(from store: AppGroupStore) -> UInt16 {

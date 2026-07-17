@@ -4,7 +4,6 @@ struct HomeTabView: View {
     @StateObject private var viewModel: HomeViewModel
     @State private var isPresentingImportSheet = false
     @State private var isPresentingBrowser = false
-    @State private var showRouteModeHint = false
     @State private var expandedSourceIDs: Set<UUID> = []
     @State private var importURLText = ""
     @State private var importConfigName = ""
@@ -32,11 +31,11 @@ struct HomeTabView: View {
             .toolbar { homeToolbar }
             .sheet(isPresented: $isPresentingImportSheet) { importSheetContent }
             .sheet(isPresented: $showSourceInfoSheet) {
-                    sourceInfoSheet
-                    .presentationDetents([.medium, .large]) // 推荐使用中等高度
+                sourceInfoSheet
+                    .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showNodeInfoSheet) {
-                    nodeInfoSheet
+                nodeInfoSheet
                     .presentationDetents([.medium, .large])
             }
             .navigationDestination(isPresented: $isPresentingBrowser) {
@@ -46,14 +45,12 @@ struct HomeTabView: View {
             .onChange(of: viewModel.isProxyEnabled) { _, newValue in
                 viewModel.setProxyEnabled(newValue)
             }
+            .onChange(of: viewModel.routeMode) { _, _ in
+                viewModel.persistRouteMode()
+            }
             .onChange(of: viewModel.selectedSourceID) { _, newValue in
                 guard let newValue else { return }
                 expandedSourceIDs.insert(newValue)
-            }
-            .alert("全局路由", isPresented: $showRouteModeHint) {
-                Button("已知晓", role: .cancel) {}
-            } message: {
-                Text("全局路由模式“设置”页面中修改")
             }
             .alert("代理操作失败", isPresented: $viewModel.showProxyError) {
                 Button("确定", role: .cancel) {}
@@ -68,53 +65,53 @@ struct HomeTabView: View {
     }
 
     private var mainContent: some View {
-        ZStack {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+        List {
+            Section {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(connectionDotColor)
+                        .frame(width: 8, height: 8)
 
-            List {
-                Section {
-                    topStatusCard
-                        .listRowInsets(EdgeInsets(top: 12, leading: 14, bottom: 0, trailing: 14))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+                    Text(connectionText)
+                        .font(.headline)
+
+                    Spacer()
+
+                    Toggle("", isOn: $viewModel.isProxyEnabled)
+                        .labelsHidden()
+                        .disabled(viewModel.isApplyingProxyState)
                 }
 
-                if viewModel.isLocalDevelopmentMode {
-                    Section {
-                        localDevelopmentStatus
-                            .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                Picker("全局路由", selection: $viewModel.routeMode) {
+                    ForEach(homeRouteModes) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 12, trailing: 16))
+            }
 
-                Section {
-                    if viewModel.configSources.isEmpty {
-                        Text("暂无配置，点击右上角 + 导入")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 20, trailing: 14))
-                            .listRowBackground(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else {
-                        sourceListContent
-                    }
+            Section {
+                Text("Mihomo：\(viewModel.localProxyStatusText)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("我的配置") {
+                if viewModel.configSources.isEmpty {
+                    Text("暂无配置，点击右上角 + 导入")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    sourceListContent
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
+        .listStyle(.insetGrouped)
     }
 
-    private var localDevelopmentStatus: some View {
-        Text("\(viewModel.proxyEngineTitle)：\(viewModel.localProxyStatusText)")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var homeRouteModes: [RouteMode] {
+        [.configuration, .proxy, .direct]
     }
 
     @ToolbarContentBuilder
@@ -140,17 +137,19 @@ struct HomeTabView: View {
     private var importSheetContent: some View {
         NavigationStack {
             Form {
-                Section("下载链接") {
-                    TextField("", text: $importURLText)
+                Section("订阅链接") {
+                    TextField("订阅链接", text: $importURLText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                         .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                 }
+
                 Section("配置名称（可选）") {
-                    TextField("", text: $importConfigName)
+                    TextField("配置名称", text: $importConfigName)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
+
                 Section {
                     Button {
                         Task {
@@ -184,118 +183,56 @@ struct HomeTabView: View {
         }
     }
 
-    private var topStatusCard: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: connectionIcon)
-                    .foregroundStyle(.blue)
-
-                Text(connectionText)
-                    .font(.headline)
-
-                Spacer()
-
-                Toggle("", isOn: $viewModel.isProxyEnabled)
-                    .labelsHidden()
-                    .disabled(viewModel.isApplyingProxyState)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            Button {
-                showRouteModeHint = true
-            } label: {
-                HStack {
-                    Image(systemName: "gearshape.2")
-                        .foregroundStyle(.blue)
-                    Text("全局路由")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Text(viewModel.routeMode.rawValue)
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-            // 连通性测试菜单入口已移除
-        }
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
     @ViewBuilder
     private var sourceListContent: some View {
         ForEach(viewModel.configSources) { source in
             sourceHeaderButton(source)
-                .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
-                .listRowBackground(Color(.secondarySystemBackground))
 
             if expandedSourceIDs.contains(source.id) {
                 ForEach(viewModel.nodes(for: source)) { node in
                     nodeRow(node, in: source)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
-                        .listRowBackground(Color(.secondarySystemBackground))
                 }
             }
         }
     }
 
     private func sourceHeaderButton(_ source: ProxyConfigSource) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Button {
-                    toggleSourceExpansion(source)
-                } label: {
-                    Image(systemName: expandedSourceIDs.contains(source.id) ? "chevron.down" : "chevron.right")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 24)
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(source.name)
-                        .font(.title3)
-                        .foregroundStyle(.primary)
-                }
-
-                Spacer()
-
-                // 连通性测试按钮
-                Button {
-                    viewModel.runConnectivityTest()
-                } label: {
-                    Image(systemName: "speedometer")
-                        .font(.title3)
-                        .foregroundStyle(.orange)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isTesting)
-                .padding(.trailing, 4)
-
-                Button {
-                    infoSource = source
-                    showSourceInfoSheet = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.title3)
-                        .foregroundStyle(.blue)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
+        HStack(spacing: 10) {
+            Button {
+                toggleSourceExpansion(source)
+            } label: {
+                Image(systemName: expandedSourceIDs.contains(source.id) ? "chevron.down" : "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: 20)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            Text(source.name)
+                .font(.body)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Button {
+                viewModel.runConnectivityTest()
+            } label: {
+                Image(systemName: "speedometer")
+                    .foregroundStyle(.orange)
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isTesting)
+
+            Button {
+                infoSource = source
+                showSourceInfoSheet = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
         }
+        .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 withAnimation {
@@ -310,34 +247,23 @@ struct HomeTabView: View {
 
     private func nodeRow(_ node: ServerNode, in source: ProxyConfigSource) -> some View {
         HStack(spacing: 10) {
-            Button {
-                viewModel.selectSource(source)
-                viewModel.selectNode(node)
-            } label: {
-                if isNodeSelected(node, in: source) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.body)
-                        .foregroundStyle(.blue)
-                        .frame(width: 12, height: 12)
-                } else {
-                    Image(systemName: "circle")
-                        .frame(width: 12, height: 12)
-                        .opacity(1)
-                }
+            if isNodeSelected(node, in: source) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.blue)
+                    .frame(width: 20)
+            } else {
+                Image(systemName: "circle")
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 20)
             }
-            .contentShape(Rectangle())
-            .buttonStyle(.plain)
-            
 
             Text(nodeBadgeFlag(node))
-                .font(.title2)
-                .frame(width: 34, height: 30)
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(Circle())
+                .font(.title3)
+                .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(nodeDisplayName(node))
-                    .font(.title3)
+                    .font(.body)
 
                 Text(nodeProtocolSubtitle(node))
                     .font(.caption)
@@ -347,22 +273,22 @@ struct HomeTabView: View {
             Spacer()
 
             Text(node.latencyText)
-                .font(.title3)
+                .font(.subheadline)
                 .foregroundStyle(.green)
 
             Image(systemName: "info.circle")
-                .font(.title3)
                 .foregroundStyle(.blue)
                 .onTapGesture {
-                    infoNode = node;
+                    infoNode = node
                     showNodeInfoSheet = true
                 }
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 30, maxHeight: 50)
-        .background(isNodeSelected(node, in: source) ? Color.blue.opacity(0.08) : Color.clear)
-        .buttonStyle(.plain)
-        // 整行点击
+        .contentShape(Rectangle())
+        .listRowBackground(
+            isNodeSelected(node, in: source)
+                ? Color.blue.opacity(0.08)
+                : Color(.secondarySystemGroupedBackground)
+        )
         .onTapGesture {
             viewModel.selectSource(source)
             viewModel.selectNode(node)
@@ -394,8 +320,11 @@ struct HomeTabView: View {
         return viewModel.isProxyEnabled ? "已连接" : "未连接"
     }
 
-    private var connectionIcon: String {
-        viewModel.isProxyEnabled ? "paperplane.circle.fill" : "paperplane.circle"
+    private var connectionDotColor: Color {
+        if viewModel.isApplyingProxyState {
+            return .orange
+        }
+        return viewModel.isProxyEnabled ? .green : .gray
     }
 
     private func nodeBadgeFlag(_ node: ServerNode) -> String {

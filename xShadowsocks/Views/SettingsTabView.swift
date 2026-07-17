@@ -61,18 +61,6 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section {
-                Picker("代理引擎", selection: $viewModel.proxyEngine) {
-                    ForEach(ProxyEngine.allCases) { engine in
-                        Text(engine.title).tag(engine)
-                    }
-                }
-            } header: {
-                Text("代理引擎")
-            } footer: {
-                Text(viewModel.proxyEngine.subtitle)
-            }
-
             Section("代理端口") {
                 HStack {
                     Text("端口")
@@ -115,7 +103,6 @@ struct SettingsTabView: View {
         .onChange(of: viewModel.allowLANAccess) { _, _ in viewModel.persist() }
         .onChange(of: viewModel.preferIPv6) { _, _ in viewModel.persist() }
         .onChange(of: viewModel.routeMode) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.proxyEngine) { _, _ in viewModel.persist() }
         .onChange(of: viewModel.proxyPortText) { _, newValue in
             viewModel.handleProxyPortInputChange(newValue)
             viewModel.persist()

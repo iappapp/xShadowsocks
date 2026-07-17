@@ -34,14 +34,38 @@ enum MihomoYAMLConfigParser {
             let name     = currentFields["name"]?.trimmed     ?? ""
             let host     = currentFields["server"]?.trimmed   ?? ""
             let port     = Int(currentFields["port"] ?? "")   ?? 443
-            let password = currentFields["password"]?.trimmed ?? ""
+            let password = currentFields["password"]?.trimmed
+                ?? currentFields["uuid"]?.trimmed
+                ?? currentFields["auth"]?.trimmed
+                ?? currentFields["auth-str"]?.trimmed
+                ?? currentFields["private-key"]?.trimmed
+                ?? ""
             let type     = currentFields["type"]?.trimmed     ?? "shadowsocks"
             let method   = currentFields["cipher"]?.trimmed ?? currentFields["method"]?.trimmed
             let sni      = currentFields["sni"]?.trimmed
+                ?? currentFields["servername"]?.trimmed
+                ?? currentFields["server-name"]?.trimmed
             let flow     = currentFields["flow"]?.trimmed
-            let encryption = currentFields["encryption"]?.trimmed
+            let encryption = currentFields["encryption"]?.trimmed ?? method
+            let tls = parseBool(currentFields["tls"])
+            let skipCertVerify = parseBool(currentFields["skip-cert-verify"])
+            let network = currentFields["network"]?.trimmed
+            let publicKey = currentFields["reality-opts.public-key"]?.trimmed
+                ?? currentFields["reality-opts.publickey"]?.trimmed
+                ?? currentFields["pbk"]?.trimmed
+            let shortId = currentFields["reality-opts.short-id"]?.trimmed
+                ?? currentFields["reality-opts.shortid"]?.trimmed
+                ?? currentFields["sid"]?.trimmed
+            let serviceName = currentFields["grpc-opts.grpc-service-name"]?.trimmed
+                ?? currentFields["ws-opts.path"]?.trimmed
+                ?? currentFields["path"]?.trimmed
+                ?? currentFields["servicename"]?.trimmed
+            let clientFingerprint = currentFields["client-fingerprint"]?.trimmed
+                ?? currentFields["fingerprint"]?.trimmed
+                ?? currentFields["fp"]?.trimmed
 
-            guard !name.isEmpty, !host.isEmpty, !password.isEmpty else { return }
+            // Display-only: name + server are enough; secret fields vary by protocol.
+            guard !name.isEmpty, !host.isEmpty else { return }
 
             parsedNodes.append(
                 ServerNode(
@@ -54,9 +78,31 @@ enum MihomoYAMLConfigParser {
                     sni: sni,
                     latency: nil,
                     flow: flow,
-                    encryption: encryption
+                    encryption: encryption,
+                    tls: tls,
+                    skipCertVerify: skipCertVerify,
+                    network: network,
+                    publicKey: publicKey,
+                    shortId: shortId,
+                    serviceName: serviceName,
+                    clientFingerprint: clientFingerprint
                 )
             )
+        }
+
+        let trimmedYAML = yamlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedYAML.hasPrefix("{"), trimmedYAML.hasSuffix("}") {
+            currentFields = parseInlineObject(trimmedYAML)
+            flushCurrentNode()
+            return deduplicate(parsedNodes)
+        }
+        if trimmedYAML.hasPrefix("-") {
+            let item = trimmedYAML.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
+            if item.hasPrefix("{"), item.hasSuffix("}") {
+                currentFields = parseInlineObject(String(item))
+                flushCurrentNode()
+                return deduplicate(parsedNodes)
+            }
         }
 
         for rawLine in lines {
@@ -94,7 +140,11 @@ enum MihomoYAMLConfigParser {
 
             // Continuation key-value inside the current block entry
             if let (k, v) = parseKeyValue(trimmed) {
-                currentFields[k] = v
+                if v.hasPrefix("{"), v.hasSuffix("}") {
+                    currentFields.merge(parseInlineObject(v, prefix: k)) { _, new in new }
+                } else {
+                    currentFields[k] = v
+                }
             }
         }
 
@@ -127,27 +177,40 @@ enum MihomoYAMLConfigParser {
         return (key, unquote(val))
     }
 
-    /// Parses `{key: value, key2: value2, ...}` inline YAML objects.
-    private static func parseInlineObject(_ text: String) -> [String: String] {
+    /// Parses `{key: value, key2: value2, nested: {key: value}}` inline YAML objects.
+    private static func parseInlineObject(_ text: String, prefix: String? = nil) -> [String: String] {
         let inner  = String(text.dropFirst().dropLast())
         let fields = splitCommaRespectingQuotes(inner)
         var result: [String: String] = [:]
         for field in fields {
-            if let (k, v) = parseKeyValue(field) { result[k] = v }
+            guard let (key, value) = parseKeyValue(field) else { continue }
+            let fullKey = [prefix, key].compactMap { $0 }.joined(separator: ".")
+            if value.hasPrefix("{"), value.hasSuffix("}") {
+                result.merge(parseInlineObject(value, prefix: fullKey)) { _, new in new }
+            } else {
+                result[fullKey] = value
+            }
         }
         return result
     }
 
-    /// Splits on `,` while respecting quoted strings.
+    /// Splits on `,` while respecting quoted strings and nested inline objects.
     private static func splitCommaRespectingQuotes(_ text: String) -> [String] {
         var results: [String] = []
         var buffer = ""
         var inSingle = false
         var inDouble = false
+        var braceDepth = 0
         for ch in text {
             if ch == "\"" && !inSingle { inDouble.toggle() }
             else if ch == "'" && !inDouble { inSingle.toggle() }
-            if ch == "," && !inSingle && !inDouble {
+
+            if !inSingle && !inDouble {
+                if ch == "{" { braceDepth += 1 }
+                else if ch == "}", braceDepth > 0 { braceDepth -= 1 }
+            }
+
+            if ch == "," && !inSingle && !inDouble && braceDepth == 0 {
                 results.append(buffer.trimmed)
                 buffer.removeAll(keepingCapacity: true)
                 continue
@@ -166,6 +229,17 @@ enum MihomoYAMLConfigParser {
             return String(t.dropFirst().dropLast())
         }
         return t
+    }
+
+    private static func parseBool(_ text: String?) -> Bool? {
+        switch text?.trimmed.lowercased() {
+        case "true", "yes", "1":
+            return true
+        case "false", "no", "0":
+            return false
+        default:
+            return nil
+        }
     }
 
     private static func deduplicate(_ nodes: [ServerNode]) -> [ServerNode] {

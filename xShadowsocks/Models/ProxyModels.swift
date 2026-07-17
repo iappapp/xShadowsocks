@@ -13,10 +13,13 @@ struct ServerNode: Identifiable, Equatable, Codable {
     var latency: Int?
     var flow: String?
     var encryption: String?
+    var tls: Bool?
+    var skipCertVerify: Bool?
     var network: String?          // VLESS 传输类型 (tcp, ws, grpc, h2 等)
     var publicKey: String?        // VLESS Reality 公钥 (pbk)
     var shortId: String?          // VLESS Reality 短ID (sid)
     var serviceName: String?      // gRPC 服务名称或 WebSocket 路径
+    var clientFingerprint: String? // Reality/TLS 客户端指纹 (chrome, safari 等)
     var headers: [String: String]? // HTTP 头部信息
 
     init(
@@ -31,10 +34,13 @@ struct ServerNode: Identifiable, Equatable, Codable {
         latency: Int?,
         flow: String? = nil,
         encryption: String? = nil,
+        tls: Bool? = nil,
+        skipCertVerify: Bool? = nil,
         network: String? = nil,
         publicKey: String? = nil,
         shortId: String? = nil,
         serviceName: String? = nil,
+        clientFingerprint: String? = nil,
         headers: [String: String]? = nil
     ) {
         self.id = id
@@ -48,10 +54,13 @@ struct ServerNode: Identifiable, Equatable, Codable {
         self.latency = latency
         self.flow = flow
         self.encryption = encryption
+        self.tls = tls
+        self.skipCertVerify = skipCertVerify
         self.network = network
         self.publicKey = publicKey
         self.shortId = shortId
         self.serviceName = serviceName
+        self.clientFingerprint = clientFingerprint
         self.headers = headers
     }
 
@@ -82,31 +91,6 @@ struct ProxyConfigSource: Identifiable, Equatable, Codable {
         self.url = url
         self.nodes = nodes
         self.updatedAt = updatedAt
-    }
-}
-
-enum ProxyEngine: String, CaseIterable, Identifiable, Codable {
-    case local = "Local"
-    case mihomo = "Mihomo"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .local:
-            return "Local"
-        case .mihomo:
-            return "Mihomo"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .local:
-            return "仅需节点信息，轻量转发"
-        case .mihomo:
-            return "完整配置文件，支持规则分流"
-        }
     }
 }
 

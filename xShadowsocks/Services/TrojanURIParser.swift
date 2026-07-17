@@ -5,8 +5,8 @@ import Foundation
 // Input  : the Base64-decoded text from a subscription URL
 // Format : one proxy URI per line
 //
-//   trojan://<password>@<host>:<port>?sni=...&allowInsecure=1#🇹🇭 泰国 01
 //   vless://<uuid>@<host>:<port>?encryption=none&security=tls&sni=...&flow=xtls-rprx-vision#🇭🇰 香港 01
+//   anytls://<password>@<host>:<port>?sni=...&fp=chrome#🇭🇰 香港 01
 //
 // The fragment after '#' becomes the node display name.
 // Falls back to the hostname when no fragment is present.
@@ -21,46 +21,14 @@ enum TrojanURIParser {
         var nodes: [ServerNode] = []
 
         for line in lines {
-            if line.lowercased().hasPrefix("trojan://") {
-                if let node = parseTrojanURI(line) { nodes.append(node) }
-            } else if line.lowercased().hasPrefix("vless://") {
+            if line.lowercased().hasPrefix("vless://") {
                 if let node = parseVlessURI(line) { nodes.append(node) }
+            } else if line.lowercased().hasPrefix("anytls://") {
+                if let node = parseAnyTLSURI(line) { nodes.append(node) }
             }
         }
 
         return deduplicate(nodes)
-    }
-
-    // MARK: - Trojan URI
-
-    /// Parses: `trojan://<password>@<host>:<port>?sni=...&allowInsecure=1#Name`
-    private static func parseTrojanURI(_ line: String) -> ServerNode? {
-        let rawFragment = line.components(separatedBy: "#").dropFirst().joined(separator: "#")
-        let nameFromFragment = decodedFragment(rawFragment)
-
-        let sanitized = line.replacingOccurrences(of: " ", with: "%20")
-
-        guard let components = URLComponents(string: sanitized),
-              let host = components.host,
-              let port = components.port,
-              let password = components.user,
-              !password.isEmpty
-        else { return nil }
-
-        let queryItems = components.queryItems ?? []
-        let sni = queryItems.first(where: { $0.name.lowercased() == "sni" })?.value
-               ?? queryItems.first(where: { $0.name.lowercased() == "peer" })?.value
-
-        return ServerNode(
-            name: nameFromFragment ?? host,
-            host: host,
-            port: port,
-            password: password,
-            nodeType: "trojan",
-            method: nil,
-            sni: sni,
-            latency: nil
-        )
     }
 
     // MARK: - VLESS URI
@@ -80,15 +48,18 @@ enum TrojanURIParser {
         else { return nil }
 
         let queryItems = components.queryItems ?? []
-        let sni = queryItems.first(where: { $0.name.lowercased() == "sni" })?.value
-               ?? queryItems.first(where: { $0.name.lowercased() == "peer" })?.value
-        let flow = queryItems.first(where: { $0.name.lowercased() == "flow" })?.value
-        let encryption = queryItems.first(where: { $0.name.lowercased() == "encryption" })?.value
-        let networkType = queryItems.first(where: { $0.name.lowercased() == "type" })?.value
-        let publicKey = queryItems.first(where: { $0.name.lowercased() == "pbk" })?.value
-        let shortId = queryItems.first(where: { $0.name.lowercased() == "sid" })?.value
-        let serviceName = queryItems.first(where: { $0.name.lowercased() == "serviceName" })?.value
-               ?? queryItems.first(where: { $0.name.lowercased() == "path" })?.value
+        let sni = queryValue("sni", in: queryItems)
+               ?? queryValue("peer", in: queryItems)
+        let flow = queryValue("flow", in: queryItems)
+        let encryption = queryValue("encryption", in: queryItems)
+        let security = queryValue("security", in: queryItems)?.lowercased()
+        let networkType = queryValue("type", in: queryItems)
+        let publicKey = queryValue("pbk", in: queryItems)
+        let shortId = queryValue("sid", in: queryItems)
+        let clientFingerprint = queryValue("fp", in: queryItems)
+            ?? queryValue("client-fingerprint", in: queryItems)
+        let serviceName = queryValue("serviceName", in: queryItems)
+               ?? queryValue("path", in: queryItems)
 
         return ServerNode(
             name: nameFromFragment ?? host,
@@ -101,14 +72,75 @@ enum TrojanURIParser {
             latency: nil,
             flow: flow,
             encryption: encryption,
+            tls: security == "tls" || publicKey != nil ? true : nil,
             network: networkType,
             publicKey: publicKey,
             shortId: shortId,
-            serviceName: serviceName
+            serviceName: serviceName,
+            clientFingerprint: clientFingerprint
+        )
+    }
+
+    // MARK: - AnyTLS URI
+
+    /// Parses: `anytls://<password>@<host>:<port>?type=tcp&insecure=0&fp=chrome&sni=...#Name`
+    private static func parseAnyTLSURI(_ line: String) -> ServerNode? {
+        let rawFragment = line.components(separatedBy: "#").dropFirst().joined(separator: "#")
+        let nameFromFragment = decodedFragment(rawFragment)
+
+        let sanitized = line.replacingOccurrences(of: " ", with: "%20")
+
+        guard let components = URLComponents(string: sanitized),
+              let host = components.host,
+              let port = components.port,
+              let password = components.user,
+              !password.isEmpty
+        else { return nil }
+
+        let queryItems = components.queryItems ?? []
+        let sni = queryValue("sni", in: queryItems)
+            ?? queryValue("peer", in: queryItems)
+        let networkType = queryValue("type", in: queryItems)
+        let clientFingerprint = queryValue("fp", in: queryItems)
+            ?? queryValue("client-fingerprint", in: queryItems)
+        let skipCertVerify = parseSkipCertVerify(from: queryItems)
+
+        return ServerNode(
+            name: nameFromFragment ?? host,
+            host: host,
+            port: port,
+            password: password,
+            nodeType: "anytls",
+            method: nil,
+            sni: sni,
+            latency: nil,
+            tls: true,
+            skipCertVerify: skipCertVerify,
+            network: networkType,
+            clientFingerprint: clientFingerprint
         )
     }
 
     // MARK: - Helpers
+
+    private static func queryValue(_ name: String, in queryItems: [URLQueryItem]) -> String? {
+        let wanted = name.lowercased()
+        return queryItems.first { $0.name.lowercased() == wanted }?.value
+    }
+
+    private static func parseSkipCertVerify(from queryItems: [URLQueryItem]) -> Bool? {
+        let rawValue = queryValue("allowInsecure", in: queryItems)
+            ?? queryValue("insecure", in: queryItems)
+            ?? queryValue("skip-cert-verify", in: queryItems)
+        switch rawValue?.lowercased() {
+        case "1", "true", "yes":
+            return true
+        case "0", "false", "no":
+            return false
+        default:
+            return nil
+        }
+    }
 
     private static func decodedFragment(_ rawFragment: String) -> String? {
         let trimmed = rawFragment.trimmingCharacters(in: .whitespacesAndNewlines)

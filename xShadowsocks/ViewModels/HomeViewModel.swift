@@ -11,7 +11,6 @@ final class HomeViewModel: ObservableObject {
     @Published var importErrorMessage = ""
     @Published var localProxyStatusText = "未启动"
     @Published var routeMode: RouteMode = .configuration
-    @Published var proxyEngine: ProxyEngine = .mihomo
     @Published var isTesting = false
     @Published var configSources: [ProxyConfigSource] = []
     @Published var selectedSourceID: UUID?
@@ -54,22 +53,20 @@ final class HomeViewModel: ObservableObject {
         configSources.first { $0.id == selectedSourceID }
     }
 
-    var isLocalDevelopmentMode: Bool {
-        proxyEngine == .local || proxyEngine == .mihomo
-    }
-
-    var proxyEngineTitle: String {
-        proxyEngine.title
-    }
-
     func onAppear() {
         guard !isPreviewMode else { return }
-        loadConfigSourcesIfNeeded()
+        // Prefer parsing the saved config file; fall back to persisted sources.
+        if !reloadHomeFromConfigFile() {
+            loadConfigSourcesIfNeeded()
+            ensureSelectedSourceAndNode()
+        }
         routeMode = loadRouteModeFromSettings()
-        proxyEngine = loadProxyEngineFromSettings()
         proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
+    }
 
-        ensureSelectedSourceAndNode()
+    func persistRouteMode() {
+        guard !isPreviewMode else { return }
+        store.saveValue(routeMode.rawValue, forKey: store.routeModeKey)
     }
 
     func selectNode(_ node: ServerNode) {
@@ -144,40 +141,8 @@ final class HomeViewModel: ObservableObject {
             let latencyMap = await withTaskGroup(of: (UUID, Int).self) { group in
                 for node in currentNodes {
                     group.addTask {
-                        do {
-                            let latency: Int
-                            switch node.nodeType.lowercased() {
-                            case "vless":
-                                latency = try await LocalVlessProxyService.measureConnectivity(
-                                    using: LocalDebugVlessNode(
-                                        host: node.host,
-                                        port: node.port,
-                                        uuid: node.password,
-                                        sni: node.sni,
-                                        type: node.nodeType,
-                                        flow: node.flow,
-                                        encryption: node.encryption,
-                                        publicKey: node.publicKey,
-                                        shortId: node.shortId,
-                                        network: node.network,
-                                        serviceName: node.serviceName
-                                    )
-                                )
-                            default:
-                                latency = try await LocalTrojanProxyService.measureConnectivity(
-                                    using: LocalDebugTrojanNode(
-                                        host: node.host,
-                                        port: node.port,
-                                        password: node.password,
-                                        sni: node.sni,
-                                        type: node.nodeType
-                                    )
-                                )
-                            }
-                            return (node.id, latency)
-                        } catch {
-                            return (node.id, -1)
-                        }
+                        let latency = await NodeLatencyProbe.measure(host: node.host, port: node.port)
+                        return (node.id, latency)
                     }
                 }
 
@@ -212,13 +177,8 @@ final class HomeViewModel: ObservableObject {
             defer { isApplyingProxyState = false }
 
             do {
-                if enabled {
-                    _ = try makeLaunchConfigData()
-                }
-
                 try await proxySelectorService?.setProxyEnabled(
                     enabled: enabled,
-                    engine: proxyEngine,
                     nodes: nodes,
                     selectedNode: selectedNode,
                     selectedNodeID: selectedNodeID,
@@ -260,21 +220,26 @@ final class HomeViewModel: ObservableObject {
         do {
             let result = try await subscriptionImportService.importNodes(from: urlString, configName: configName)
 
-            // If the subscription was a full mihomo YAML config, persist it as the local config file.
-            if let yaml = result.rawYAMLConfig {
-                saveYAMLConfigFile(yaml)
+            guard let yaml = result.rawYAMLConfig else {
+                throw SubscriptionNodeImportError.requiresYAMLConfig
             }
 
-            let source = ProxyConfigSource(name: result.sourceName, url: result.sourceURL, nodes: result.nodes, updatedAt: Date())
-            if let index = configSources.firstIndex(where: { $0.url == result.sourceURL }) {
-                configSources[index] = source
+            // Save runtime config as original YAML plus inline proxies from node subscription.
+            let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
+            try MihomoConfigFileStore.save(mergedYAML)
+            if result.nodes.isEmpty {
+                _ = reloadHomeFromConfigFile(sourceName: result.sourceName, sourceURL: result.sourceURL)
             } else {
-                configSources.append(source)
+                let source = ProxyConfigSource(
+                    name: result.sourceName,
+                    url: result.sourceURL,
+                    nodes: result.nodes,
+                    updatedAt: Date()
+                )
+                configSources = [source]
+                selectSource(source)
+                persistSourceState()
             }
-
-            selectSource(source)
-            try store.save(configSources, forKey: configSourcesKey)
-            try store.save(result.nodes, forKey: importedNodesKey)
             return true
         } catch {
             importErrorMessage = (error as? SubscriptionNodeImportError)?.localizedDescription ?? error.localizedDescription
@@ -283,57 +248,29 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    /// Writes a full mihomo YAML config to the shared app-support directory,
-    /// mirroring the path used by ConfigViewModel so both tabs see the same file.
-    private func saveYAMLConfigFile(_ yaml: String) {
-        let fileManager = FileManager.default
-        let baseDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        let fileURL = baseDir
-            .appendingPathComponent("mihomo", isDirectory: true)
-            .appendingPathComponent("default.conf", isDirectory: false)
-        do {
-            try fileManager.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try yaml.data(using: .utf8)?.write(to: fileURL, options: .atomic)
-        } catch {
-            // Non-fatal: nodes were still parsed; config file write failure is surfaced via ConfigViewModel
-        }
-    }
+    /// Parse `default.conf` and refresh「我的配置」node list. Returns false if no file.
+    @discardableResult
+    private func reloadHomeFromConfigFile(sourceName: String? = nil, sourceURL: String? = nil) -> Bool {
+        guard let yaml = MihomoConfigFileStore.loadText() else { return false }
 
-    private func makeLaunchConfigData() throws -> Data {
-        guard let selectedNode else {
-            throw NodeImportError.missingNode
-        }
+        let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
+        let name = sourceName
+            ?? configSources.first?.name
+            ?? "本地配置"
+        let url = sourceURL
+            ?? configSources.first?.url
+            ?? "local://default.conf"
 
-        let payload = TunnelLaunchConfig(
-            remark: selectedNode.name,
-            server: selectedNode.host,
-            port: String(selectedNode.port),
-            password: selectedNode.password,
-            method: selectedNode.method ?? "aes-256-gcm",
-            plugin: selectedNode.nodeType == "trojan" ? "trojan" : "none",
-            pluginOptions: selectedNode.sni ?? "",
-            udpRelay: true,
-            tcpFastOpen: false,
-            routingRules: []
+        let source = ProxyConfigSource(
+            name: name,
+            url: url,
+            nodes: parsedNodes,
+            updatedAt: Date()
         )
-
-        let appConfig = ShadowsocksConfig(
-            remark: payload.remark,
-            server: payload.server,
-            port: payload.port,
-            password: payload.password,
-            method: .aes256gcm,
-            plugin: .none,
-            pluginOptions: payload.pluginOptions,
-            udpRelay: payload.udpRelay,
-            tcpFastOpen: payload.tcpFastOpen
-        )
-        try store.save(appConfig, forKey: store.sharedConfigKey)
-        return try JSONEncoder().encode(payload)
+        configSources = [source]
+        selectSource(source)
+        persistSourceState()
+        return true
     }
 
     private func loadConfigSourcesIfNeeded() {
@@ -408,11 +345,6 @@ final class HomeViewModel: ObservableObject {
         let rawValue = store.loadString(forKey: store.routeModeKey, default: RouteMode.configuration.rawValue)
         return RouteMode(rawValue: rawValue) ?? .configuration
     }
-
-    private func loadProxyEngineFromSettings() -> ProxyEngine {
-        let rawValue = store.loadString(forKey: store.proxyEngineKey, default: ProxyEngine.mihomo.rawValue)
-        return ProxyEngine(rawValue: rawValue) ?? .mihomo
-    }
 }
 
 extension HomeViewModel {
@@ -435,33 +367,8 @@ extension HomeViewModel {
         viewModel.nodes = hkNodes
         viewModel.selectedNodeID = viewModel.nodes.first?.id
         viewModel.routeMode = .proxy
-        viewModel.proxyEngine = .mihomo
         viewModel.isProxyEnabled = true
         viewModel.localProxyStatusText = "运行中 (Mixed 7890)"
         return viewModel
     }
-}
-
-private enum NodeImportError: LocalizedError {
-    case missingNode
-
-    var errorDescription: String? {
-        switch self {
-        case .missingNode:
-            return "请先选择一个节点"
-        }
-    }
-}
-
-private struct TunnelLaunchConfig: Codable {
-    let remark: String
-    let server: String
-    let port: String
-    let password: String
-    let method: String
-    let plugin: String
-    let pluginOptions: String
-    let udpRelay: Bool
-    let tcpFastOpen: Bool
-    let routingRules: [String]
 }
