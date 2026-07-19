@@ -30,7 +30,7 @@ enum SubscriptionContentParser {
         
         // Path B: Base64-encoded trojan:// URI list
         if let decoded = decodeBase64(trimmedPayload) {
-            let nodes = TrojanURIParser.parse(decoded)
+            let nodes = URIParser.parse(decoded)
             if !nodes.isEmpty {
                 return ParseResult(nodes: nodes, rawYAML: nil)
             }

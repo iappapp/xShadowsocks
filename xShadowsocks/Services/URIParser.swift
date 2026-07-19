@@ -11,7 +11,7 @@ import Foundation
 // The fragment after '#' becomes the node display name.
 // Falls back to the hostname when no fragment is present.
 
-enum TrojanURIParser {
+enum URIParser {
     static func parse(_ decodedText: String) -> [ServerNode] {
         let lines = decodedText
             .components(separatedBy: .newlines)

@@ -23,7 +23,7 @@ struct xShadowsocksTests {
         invalid://not-a-trojan
         
         """
-        let nodes = TrojanURIParser.parse(input)
+        let nodes = URIParser.parse(input)
         #expect(nodes.count == 3)
         #expect(nodes[0].name == "节点一")
         #expect(nodes[0].host == "host1.com")
