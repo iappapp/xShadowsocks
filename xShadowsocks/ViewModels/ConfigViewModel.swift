@@ -25,13 +25,17 @@ struct LocalConfigFileInfo: Identifiable, Equatable {
 @MainActor
 final class ConfigViewModel: ObservableObject {
     @Published var importErrorMessage: String?
-    @Published var localConfigFile: LocalConfigFileInfo?
     @Published var configOperationMessage: String?
     @Published var isImportingConfigFile = false
+    @Published var localConfigFile: LocalConfigFileInfo?
+    @Published var configSources: [ProxyConfigSource] = []
 
     private let isPreviewMode: Bool
     private let defaultConfigFileName = "default.conf"
     private let fileManager = FileManager.default
+    private let store = AppGroupStore.shared
+    private let configSourcesKey = "config_sources"
+    private let subscriptionImportService = SubscriptionNodeImportService()
 
     init(isPreviewMode: Bool = false) {
         self.isPreviewMode = isPreviewMode
@@ -50,11 +54,66 @@ final class ConfigViewModel: ObservableObject {
         }
         ensureDefaultConfigFileIfNeeded()
         refreshLocalConfigFile()
+        loadConfigSourcesFromStore()
     }
+
+    // MARK: - Subscription import (dual-UA: ClashX YAML + generic UA node list)
+
+    func importNodes(from urlString: String, configName: String?) async -> Bool {
+        isImportingConfigFile = true
+        importErrorMessage = nil
+        configOperationMessage = nil
+        defer { isImportingConfigFile = false }
+
+        let trimmedName = (configName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            importErrorMessage = "请输入配置名称"
+            return false
+        }
+
+        do {
+            let result = try await subscriptionImportService.importNodes(from: urlString, configName: trimmedName)
+
+            guard let yaml = result.rawYAMLConfig else {
+                throw SubscriptionNodeImportError.requiresYAMLConfig
+            }
+
+            // Merge parsed proxy nodes into the downloaded YAML, then persist as runtime config.
+            let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
+            try MihomoConfigFileStore.save(mergedYAML)
+
+            let source = ProxyConfigSource(
+                name: result.sourceName,
+                url: result.sourceURL,
+                nodes: result.nodes,
+                updatedAt: Date(),
+                yamlConfig: mergedYAML
+            )
+            configSources = [source]
+            persistSourceState()
+            refreshLocalConfigFile()
+
+            configOperationMessage = "导入成功，已更新 \(defaultConfigFileName)"
+            return true
+        } catch {
+            importErrorMessage = (error as? SubscriptionNodeImportError)?.localizedDescription ?? error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteSource(_ source: ProxyConfigSource) {
+        guard let index = configSources.firstIndex(where: { $0.id == source.id }) else { return }
+        configSources.remove(at: index)
+        persistSourceState()
+    }
+
+    // MARK: - Default config
 
     func restoreDefaultConfigFile() {
         do {
             try writeConfigFile(contents: defaultTemplate)
+            configSources = []
+            persistSourceState()
             refreshLocalConfigFile()
             configOperationMessage = "已恢复默认配置"
             importErrorMessage = nil
@@ -63,37 +122,38 @@ final class ConfigViewModel: ObservableObject {
         }
     }
 
-    func importConfigFile(from urlString: String) async -> Bool {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), !trimmed.isEmpty else {
-            importErrorMessage = "链接无效，请输入完整的 http(s) 链接"
-            return false
+    // MARK: - Persistence
+
+    func loadConfigSourcesFromStore() {
+        if let saved = store.load([ProxyConfigSource].self, forKey: configSourcesKey), !saved.isEmpty {
+            configSources = saved
+            return
         }
-
-        isImportingConfigFile = true
-        importErrorMessage = nil
-        defer { isImportingConfigFile = false }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            if let http = response as? HTTPURLResponse,
-               !(200...299).contains(http.statusCode) {
-                throw ConfigFileImportError.httpStatus(http.statusCode)
+        // Fall back: synthesize a source from the saved default.conf if it has proxies.
+        if let yaml = MihomoConfigFileStore.loadText() {
+            let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
+            if !parsedNodes.isEmpty {
+                let source = ProxyConfigSource(
+                    name: "本地配置",
+                    url: "local://default.conf",
+                    nodes: parsedNodes,
+                    updatedAt: Date(),
+                    yamlConfig: yaml
+                )
+                configSources = [source]
+            } else {
+                configSources = []
             }
-
-            guard let text = String(data: data, encoding: .utf8), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ConfigFileImportError.invalidText
-            }
-
-            try writeConfigFile(contents: text)
-            refreshLocalConfigFile()
-            configOperationMessage = "导入成功，已更新 \(defaultConfigFileName)"
-            return true
-        } catch {
-            importErrorMessage = (error as? ConfigFileImportError)?.localizedDescription ?? error.localizedDescription
-            return false
+        } else {
+            configSources = []
         }
     }
+
+    private func persistSourceState() {
+        try? store.save(configSources, forKey: configSourcesKey)
+    }
+
+    // MARK: - File helpers
 
     private func ensureDefaultConfigFileIfNeeded() {
         let fileURL = defaultConfigFileURL()
@@ -118,11 +178,7 @@ final class ConfigViewModel: ObservableObject {
     }
 
     private func defaultConfigFileURL() -> URL {
-        let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        return baseDirectory
-            .appendingPathComponent("mihomo", isDirectory: true)
-            .appendingPathComponent(defaultConfigFileName, isDirectory: false)
+        MihomoConfigFileStore.fileURL
     }
 
     private var defaultTemplate: String {
@@ -159,19 +215,5 @@ extension ConfigViewModel {
 
     static func previewEmpty() -> ConfigViewModel {
         ConfigViewModel(isPreviewMode: true)
-    }
-}
-
-private enum ConfigFileImportError: LocalizedError {
-    case invalidText
-    case httpStatus(Int)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidText:
-            return "下载内容不是有效文本"
-        case let .httpStatus(statusCode):
-            return "下载失败，HTTP 状态码 \(statusCode)"
-        }
     }
 }

@@ -4,6 +4,7 @@ struct ConfigTabView: View {
     @StateObject private var viewModel: ConfigViewModel
     @State private var isShowingImportSheet = false
     @State private var importURL = ""
+    @State private var importConfigName = ""
     @State private var showRestoreConfirm = false
     @State private var showFileInfo = false
 
@@ -23,7 +24,7 @@ struct ConfigTabView: View {
                             showRestoreConfirm = true
                         }
                         Divider().padding(.leading, 44)
-                        actionRow(icon: "icloud.and.arrow.down", title: "导入...") {
+                        actionRow(icon: "icloud.and.arrow.down", title: "导入订阅...") {
                             isShowingImportSheet = true
                         }
                     }
@@ -92,6 +93,24 @@ struct ConfigTabView: View {
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
+
+                    if !viewModel.configSources.isEmpty {
+                        Text("已导入配置")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 2)
+
+                        VStack(spacing: 0) {
+                            ForEach(viewModel.configSources) { source in
+                                sourceRow(source)
+                                if source.id != viewModel.configSources.last?.id {
+                                    Divider().padding(.leading, 44)
+                                }
+                            }
+                        }
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
@@ -113,74 +132,11 @@ struct ConfigTabView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .disabled(viewModel.isImportingConfigFile)
             }
         }
         .sheet(isPresented: $isShowingImportSheet) {
-            NavigationStack {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 8) {
-                        TextField("https://example.com/default.conf", text: $importURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                            .textFieldStyle(.roundedBorder)
-                        if !importURL.isEmpty {
-                            Button {
-                                importURL = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    HStack {
-                        Spacer()
-                        Button("重置输入") {
-                            importURL = ""
-                        }
-                        .font(.footnote)
-                        Spacer()
-                    }
-
-                    if let importError = viewModel.importErrorMessage {
-                        Text(importError)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
-                    Spacer()
-                }
-                .padding()
-                .navigationTitle("导入配置")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") {
-                            isShowingImportSheet = false
-                            importURL = ""
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button {
-                            Task {
-                                let success = await viewModel.importConfigFile(from: importURL)
-                                if success {
-                                    isShowingImportSheet = false
-                                    importURL = ""
-                                }
-                            }
-                        } label: {
-                            if viewModel.isImportingConfigFile {
-                                ProgressView()
-                            } else {
-                                Text("导入")
-                            }
-                        }
-                        .disabled(viewModel.isImportingConfigFile)
-                    }
-                }
-            }
+            importSheet
         }
         .alert("恢复默认配置", isPresented: $showRestoreConfirm) {
             Button("取消", role: .cancel) {}
@@ -197,6 +153,97 @@ struct ConfigTabView: View {
                 Text("名称：\(file.name)\n修改时间：\(file.modifiedText)\n大小：\(file.sizeText)")
             } else {
                 Text("未找到本地配置文件")
+            }
+        }
+    }
+
+    private var importSheet: some View {
+        NavigationStack {
+            Form {
+                Section("订阅链接") {
+                    TextField("https://example.com/sub", text: $importURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                }
+
+                Section("配置名称") {
+                    TextField("请输入配置名称", text: $importConfigName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                if let importError = viewModel.importErrorMessage {
+                    Section {
+                        Text(importError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task {
+                            let success = await viewModel.importNodes(from: importURL, configName: importConfigName)
+                            if success {
+                                isShowingImportSheet = false
+                                importURL = ""
+                                importConfigName = ""
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("下载并导入")
+                            Spacer()
+                            if viewModel.isImportingConfigFile {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(importURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                               || importConfigName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                               || viewModel.isImportingConfigFile)
+                }
+            }
+            .navigationTitle("导入配置")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        isShowingImportSheet = false
+                        importURL = ""
+                        importConfigName = ""
+                    }
+                }
+            }
+        }
+    }
+
+    private func sourceRow(_ source: ProxyConfigSource) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "doc.text.fill")
+                .foregroundStyle(.blue)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.name)
+                    .font(.body)
+                Text("\(source.nodes.count) 个节点 · \(source.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                withAnimation {
+                    viewModel.deleteSource(source)
+                }
+            } label: {
+                Label("删除", systemImage: "trash")
             }
         }
     }
