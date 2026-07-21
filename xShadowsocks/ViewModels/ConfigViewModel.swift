@@ -1,37 +1,15 @@
 import Foundation
 
-struct LocalConfigFileInfo: Identifiable, Equatable {
-    let id = UUID()
-    let name: String
-    let modifiedAt: Date
-    let sizeInBytes: Int64
 
-    var modifiedText: String {
-        Self.dateFormatter.string(from: modifiedAt)
-    }
-
-    var sizeText: String {
-        ByteCountFormatter.string(fromByteCount: sizeInBytes, countStyle: .file)
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter
-    }()
-}
 
 @MainActor
 final class ConfigViewModel: ObservableObject {
     @Published var importErrorMessage: String?
-    @Published var configOperationMessage: String?
     @Published var isImportingConfigFile = false
-    @Published var localConfigFile: LocalConfigFileInfo?
-    @Published var configSources: [ProxyConfigSource] = []
+    @Published var localConfigFile: LocalConfigFileModel?
+    @Published var configSources: [ConfigSourceModel] = []
 
     private let isPreviewMode: Bool
-    private let defaultConfigFileName = "default.conf"
     private let fileManager = FileManager.default
     private let store = AppGroupStore.shared
     private let configSourcesKey = "config_sources"
@@ -44,8 +22,8 @@ final class ConfigViewModel: ObservableObject {
     func onAppear() {
         guard !isPreviewMode else {
             if localConfigFile == nil {
-                localConfigFile = LocalConfigFileInfo(
-                    name: defaultConfigFileName,
+                localConfigFile = LocalConfigFileModel(
+                    name: MihomoConfigFileStore.defaultTemplateFileName,
                     modifiedAt: Date(),
                     sizeInBytes: Int64(defaultTemplate.utf8.count)
                 )
@@ -62,7 +40,6 @@ final class ConfigViewModel: ObservableObject {
     func importNodes(from urlString: String, configName: String?) async -> Bool {
         isImportingConfigFile = true
         importErrorMessage = nil
-        configOperationMessage = nil
         defer { isImportingConfigFile = false }
 
         let trimmedName = (configName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -80,20 +57,29 @@ final class ConfigViewModel: ObservableObject {
 
             // Merge parsed proxy nodes into the downloaded YAML, then persist as runtime config.
             let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
-            try MihomoConfigFileStore.save(mergedYAML)
+            let fileName = MihomoConfigFileStore.fileName(forConfigName: trimmedName)
+            try MihomoConfigFileStore.save(mergedYAML, as: fileName)
+            MihomoConfigFileStore.activeFileName = fileName
 
-            let source = ProxyConfigSource(
+            let source = ConfigSourceModel(
                 name: result.sourceName,
                 url: result.sourceURL,
                 nodes: result.nodes,
                 updatedAt: Date(),
-                yamlConfig: mergedYAML
+                yamlConfig: mergedYAML,
+                fileName: fileName
             )
-            configSources = [source]
+            // Append to the list of configs; if a config with the same filename
+            // already exists (re-import of the same name), replace it in place
+            // instead of wiping the whole list.
+            if let existingIndex = configSources.firstIndex(where: { $0.fileName == fileName }) {
+                configSources[existingIndex] = source
+            } else {
+                configSources.append(source)
+            }
             persistSourceState()
             refreshLocalConfigFile()
 
-            configOperationMessage = "导入成功，已更新 \(defaultConfigFileName)"
             return true
         } catch {
             importErrorMessage = (error as? SubscriptionNodeImportError)?.localizedDescription ?? error.localizedDescription
@@ -101,52 +87,23 @@ final class ConfigViewModel: ObservableObject {
         }
     }
 
-    func deleteSource(_ source: ProxyConfigSource) {
+    func deleteSource(_ source: ConfigSourceModel) {
         guard let index = configSources.firstIndex(where: { $0.id == source.id }) else { return }
         configSources.remove(at: index)
         persistSourceState()
     }
 
-    // MARK: - Default config
-
-    func restoreDefaultConfigFile() {
-        do {
-            try writeConfigFile(contents: defaultTemplate)
-            configSources = []
-            persistSourceState()
-            refreshLocalConfigFile()
-            configOperationMessage = "已恢复默认配置"
-            importErrorMessage = nil
-        } catch {
-            importErrorMessage = "恢复默认配置失败：\(error.localizedDescription)"
-        }
-    }
-
     // MARK: - Persistence
 
     func loadConfigSourcesFromStore() {
-        if let saved = store.load([ProxyConfigSource].self, forKey: configSourcesKey), !saved.isEmpty {
+        // The subscription URL is owned by the saved ConfigSourceModel (set at
+        // import time). Never synthesize a placeholder URL here — if there is
+        // no saved source, show nothing.
+        if let saved = store.load([ConfigSourceModel].self, forKey: configSourcesKey), !saved.isEmpty {
             configSources = saved
             return
         }
-        // Fall back: synthesize a source from the saved default.conf if it has proxies.
-        if let yaml = MihomoConfigFileStore.loadText() {
-            let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
-            if !parsedNodes.isEmpty {
-                let source = ProxyConfigSource(
-                    name: "本地配置",
-                    url: "local://default.conf",
-                    nodes: parsedNodes,
-                    updatedAt: Date(),
-                    yamlConfig: yaml
-                )
-                configSources = [source]
-            } else {
-                configSources = []
-            }
-        } else {
-            configSources = []
-        }
+        configSources = []
     }
 
     private func persistSourceState() {
@@ -156,29 +113,30 @@ final class ConfigViewModel: ObservableObject {
     // MARK: - File helpers
 
     private func ensureDefaultConfigFileIfNeeded() {
-        let fileURL = defaultConfigFileURL()
-        guard !fileManager.fileExists(atPath: fileURL.path) else { return }
-        try? writeConfigFile(contents: defaultTemplate)
+        let activeFileName = MihomoConfigFileStore.activeFileName
+        let url = MihomoConfigFileStore.fileURL(forFileName: activeFileName)
+        guard !fileManager.fileExists(atPath: url.path) else { return }
+        // Active file missing: write the default template to default.yaml and activate it.
+        let templateName = MihomoConfigFileStore.defaultTemplateFileName
+        try? writeConfigFile(contents: defaultTemplate, as: templateName)
+        MihomoConfigFileStore.activeFileName = templateName
     }
 
     private func refreshLocalConfigFile() {
-        let fileURL = defaultConfigFileURL()
-        guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path) else {
+        let activeFileName = MihomoConfigFileStore.activeFileName
+        let url = MihomoConfigFileStore.fileURL(forFileName: activeFileName)
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
             localConfigFile = nil
             return
         }
 
         let modifiedAt = attributes[.modificationDate] as? Date ?? Date()
         let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        localConfigFile = LocalConfigFileInfo(name: defaultConfigFileName, modifiedAt: modifiedAt, sizeInBytes: size)
+        localConfigFile = LocalConfigFileModel(name: activeFileName, modifiedAt: modifiedAt, sizeInBytes: size)
     }
 
-    private func writeConfigFile(contents: String) throws {
-        try MihomoConfigFileStore.save(contents)
-    }
-
-    private func defaultConfigFileURL() -> URL {
-        MihomoConfigFileStore.fileURL
+    private func writeConfigFile(contents: String, as fileName: String) throws {
+        try MihomoConfigFileStore.save(contents, as: fileName)
     }
 
     private var defaultTemplate: String {

@@ -10,6 +10,7 @@ final class AppGroupStore {
     let trafficDownloadBytesKey = "traffic_download_bytes"
     let routeModeKey = "settings.routing.mode"
     let proxyPortKey = "settings.proxy.port"
+    let activeConfigFileNameKey = "active_config_filename"
 
     private var defaults: UserDefaults? {
         UserDefaults(suiteName: appGroupID)

@@ -182,7 +182,7 @@ enum MihomoRuntimeError: LocalizedError {
         case .emptyNodeList:
             return "节点列表为空"
         case .missingConfigFile:
-            return "未找到配置文件 default.conf，请先导入订阅或配置"
+            return "未找到配置文件，请先导入订阅或配置"
         case .bridgeNotReady:
             return "Mihomo Core 未就绪：请检查 xcframework 是否 Embed & Sign 且已导出 mihomo_* 符号"
         }
