@@ -2,15 +2,10 @@ import SwiftUI
 
 struct HomeTabView: View {
     @StateObject private var viewModel: HomeViewModel
-    @State private var isPresentingImportSheet = false
     @State private var isPresentingBrowser = false
     @State private var expandedSourceIDs: Set<UUID> = []
-    @State private var importURLText = ""
-    @State private var importConfigName = ""
     @State private var infoSource: ProxyConfigSource? = nil
     @State private var infoNode: ServerNode? = nil
-    @State private var showSourceInfoSheet = false
-    @State private var showNodeInfoSheet = false
 
     @MainActor init(viewModel: HomeViewModel? = nil) {
         _viewModel = StateObject(wrappedValue: viewModel ?? HomeViewModel())
@@ -29,13 +24,12 @@ struct HomeTabView: View {
                 }
             }
             .toolbar { homeToolbar }
-            .sheet(isPresented: $isPresentingImportSheet) { importSheetContent }
-            .sheet(isPresented: $showSourceInfoSheet) {
-                sourceInfoSheet
+            .sheet(item: $infoSource) { source in
+                sourceInfoSheet(for: source)
                     .presentationDetents([.medium, .large])
             }
-            .sheet(isPresented: $showNodeInfoSheet) {
-                nodeInfoSheet
+            .sheet(item: $infoNode) { node in
+                nodeInfoSheet(for: node)
                     .presentationDetents([.medium, .large])
             }
             .navigationDestination(isPresented: $isPresentingBrowser) {
@@ -56,11 +50,6 @@ struct HomeTabView: View {
                 Button("确定", role: .cancel) {}
             } message: {
                 Text(viewModel.proxyErrorMessage)
-            }
-            .alert("导入失败", isPresented: $viewModel.showImportError) {
-                Button("确定", role: .cancel) {}
-            } message: {
-                Text(viewModel.importErrorMessage)
             }
     }
 
@@ -99,7 +88,7 @@ struct HomeTabView: View {
 
             Section("我的配置") {
                 if viewModel.configSources.isEmpty {
-                    Text("暂无配置，点击右上角 + 导入")
+                    Text("暂无配置，请到「配置」页导入")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
@@ -121,64 +110,6 @@ struct HomeTabView: View {
                 isPresentingBrowser = true
             } label: {
                 Image(systemName: "safari")
-            }
-        }
-
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Button {
-                isPresentingImportSheet = true
-            } label: {
-                Image(systemName: "plus")
-            }
-            .disabled(viewModel.isImportingNodes)
-        }
-    }
-
-    private var importSheetContent: some View {
-        NavigationStack {
-            Form {
-                Section("订阅链接") {
-                    TextField("订阅链接", text: $importURLText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                }
-
-                Section("配置名称（可选）") {
-                    TextField("配置名称", text: $importConfigName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-
-                Section {
-                    Button {
-                        Task {
-                            let success = await viewModel.importNodes(from: importURLText, configName: importConfigName)
-                            if success {
-                                importURLText = ""
-                                importConfigName = ""
-                                isPresentingImportSheet = false
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text("下载并导入")
-                            Spacer()
-                            if viewModel.isImportingNodes {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(importURLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isImportingNodes)
-                }
-            }
-            .navigationTitle("导入配置")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
-                        isPresentingImportSheet = false
-                    }
-                }
             }
         }
     }
@@ -225,7 +156,6 @@ struct HomeTabView: View {
 
             Button {
                 infoSource = source
-                showSourceInfoSheet = true
             } label: {
                 Image(systemName: "info.circle")
                     .foregroundStyle(.blue)
@@ -280,7 +210,6 @@ struct HomeTabView: View {
                 .foregroundStyle(.blue)
                 .onTapGesture {
                     infoNode = node
-                    showNodeInfoSheet = true
                 }
         }
         .contentShape(Rectangle())
@@ -353,54 +282,50 @@ struct HomeTabView: View {
         viewModel.selectedSourceID == source.id && viewModel.selectedNodeID == node.id
     }
 
-    private var sourceInfoSheet: some View {
+    private func sourceInfoSheet(for source: ProxyConfigSource) -> some View {
         NavigationStack {
             List {
-                if let source = infoSource {
-                    Section("基础信息") {
-                        LabeledContent("配置名称", value: source.name)
-                        LabeledContent("节点数量", value: "\(source.nodes.count)")
-                        LabeledContent("更新时间", value: source.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                    }
-                    Section("来源链接") {
-                        Text(source.url)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                Section("基础信息") {
+                    LabeledContent("配置名称", value: source.name)
+                    LabeledContent("节点数量", value: "\(source.nodes.count)")
+                    LabeledContent("更新时间", value: source.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                }
+                Section("来源链接") {
+                    Text(source.url)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             .navigationTitle("服务详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button("完成") { showSourceInfoSheet = false }
+                Button("完成") { infoSource = nil }
             }
         }
     }
 
-    private var nodeInfoSheet: some View {
+    private func nodeInfoSheet(for node: ServerNode) -> some View {
         NavigationStack {
             List {
-                if let node = infoNode {
-                    Section("节点属性") {
-                        LabeledContent("名称", value: node.name)
-                        LabeledContent("协议", value: node.nodeType.uppercased())
-                        LabeledContent("加密", value: node.method ?? "None")
-                    }
-                    Section("网络配置") {
-                        LabeledContent("服务器", value: node.host)
-                        LabeledContent("端口", value: "\(node.port)")
-                        LabeledContent("SNI", value: node.sni ?? "自动")
-                    }
-                    Section("安全凭据") {
-                        SecureField("密码", text: .constant(node.password))
-                            .disabled(true)
-                    }
+                Section("节点属性") {
+                    LabeledContent("名称", value: node.name)
+                    LabeledContent("协议", value: node.nodeType.uppercased())
+                    LabeledContent("加密", value: node.method ?? "None")
+                }
+                Section("网络配置") {
+                    LabeledContent("服务器", value: node.host)
+                    LabeledContent("端口", value: "\(node.port)")
+                    LabeledContent("SNI", value: node.sni ?? "自动")
+                }
+                Section("安全凭据") {
+                    SecureField("密码", text: .constant(node.password))
+                        .disabled(true)
                 }
             }
             .navigationTitle("节点信息")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button("完成") { showNodeInfoSheet = false }
+                Button("完成") { infoNode = nil }
             }
         }
     }

@@ -6,9 +6,6 @@ final class HomeViewModel: ObservableObject {
     @Published var isApplyingProxyState = false
     @Published var showProxyError = false
     @Published var proxyErrorMessage = ""
-    @Published var isImportingNodes = false
-    @Published var showImportError = false
-    @Published var importErrorMessage = ""
     @Published var localProxyStatusText = "未启动"
     @Published var routeMode: RouteMode = .configuration
     @Published var isTesting = false
@@ -17,11 +14,9 @@ final class HomeViewModel: ObservableObject {
     @Published var nodes: [ServerNode] = []
     @Published var selectedNodeID: UUID?
 
-    private let importedNodesKey = "imported_nodes"
     private let configSourcesKey = "config_sources"
     private let isPreviewMode: Bool
     private let store = AppGroupStore.shared
-    private let subscriptionImportService = SubscriptionNodeImportService()
     private var proxySelectorService: ProxySelectorService?
     private var isSyncingProxyState = false
 
@@ -55,11 +50,8 @@ final class HomeViewModel: ObservableObject {
 
     func onAppear() {
         guard !isPreviewMode else { return }
-        // Prefer parsing the saved config file; fall back to persisted sources.
-        if !reloadHomeFromConfigFile() {
-            loadConfigSourcesIfNeeded()
-            ensureSelectedSourceAndNode()
-        }
+        loadConfigSourcesFromStore()
+        ensureSelectedSourceAndNode()
         routeMode = loadRouteModeFromSettings()
         proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
     }
@@ -170,6 +162,11 @@ final class HomeViewModel: ObservableObject {
         if enabled {
             routeMode = loadRouteModeFromSettings()
             proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
+            // Re-activate the selected config file before starting the proxy so that
+            // `default.conf` always reflects the user's current selection.
+            if let yaml = selectedSource?.yamlConfig {
+                try? MihomoConfigFileStore.save(yaml)
+            }
         }
 
         isApplyingProxyState = true
@@ -210,90 +207,29 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Loading
 
-    func importNodes(from urlString: String, configName: String?) async -> Bool {
-        isImportingNodes = true
-        defer {
-            isImportingNodes = false
+    private func loadConfigSourcesFromStore() {
+        if let saved = store.load([ProxyConfigSource].self, forKey: configSourcesKey), !saved.isEmpty {
+            configSources = saved
+            return
         }
-
-        do {
-            let result = try await subscriptionImportService.importNodes(from: urlString, configName: configName)
-
-            guard let yaml = result.rawYAMLConfig else {
-                throw SubscriptionNodeImportError.requiresYAMLConfig
-            }
-
-            // Save runtime config as original YAML plus inline proxies from node subscription.
-            let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
-            try MihomoConfigFileStore.save(mergedYAML)
-            if result.nodes.isEmpty {
-                _ = reloadHomeFromConfigFile(sourceName: result.sourceName, sourceURL: result.sourceURL)
-            } else {
+        // Fall back: synthesize a source from the saved default.conf.
+        if let yaml = MihomoConfigFileStore.loadText() {
+            let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
+            if !parsedNodes.isEmpty {
                 let source = ProxyConfigSource(
-                    name: result.sourceName,
-                    url: result.sourceURL,
-                    nodes: result.nodes,
-                    updatedAt: Date()
+                    name: "本地配置",
+                    url: "local://default.conf",
+                    nodes: parsedNodes,
+                    updatedAt: Date(),
+                    yamlConfig: yaml
                 )
                 configSources = [source]
-                selectSource(source)
-                persistSourceState()
+                return
             }
-            return true
-        } catch {
-            importErrorMessage = (error as? SubscriptionNodeImportError)?.localizedDescription ?? error.localizedDescription
-            showImportError = true
-            return false
         }
-    }
-
-    /// Parse `default.conf` and refresh「我的配置」node list. Returns false if no file.
-    @discardableResult
-    private func reloadHomeFromConfigFile(sourceName: String? = nil, sourceURL: String? = nil) -> Bool {
-        guard let yaml = MihomoConfigFileStore.loadText() else { return false }
-
-        let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
-        let name = sourceName
-            ?? configSources.first?.name
-            ?? "本地配置"
-        let url = sourceURL
-            ?? configSources.first?.url
-            ?? "local://default.conf"
-
-        let source = ProxyConfigSource(
-            name: name,
-            url: url,
-            nodes: parsedNodes,
-            updatedAt: Date()
-        )
-        configSources = [source]
-        selectSource(source)
-        persistSourceState()
-        return true
-    }
-
-    private func loadConfigSourcesIfNeeded() {
-        if let savedSources = store.load([ProxyConfigSource].self, forKey: configSourcesKey), !savedSources.isEmpty {
-            configSources = savedSources
-            return
-        }
-
-        guard let savedNodes = store.load([ServerNode].self, forKey: importedNodesKey), !savedNodes.isEmpty else {
-            configSources = []
-            nodes = []
-            return
-        }
-
-        configSources = [
-            ProxyConfigSource(
-                name: "已导入配置",
-                url: "local://legacy-import",
-                nodes: savedNodes,
-                updatedAt: Date()
-            )
-        ]
-        nodes = savedNodes
+        configSources = []
     }
 
     private func ensureSelectedSourceAndNode() {
@@ -327,18 +263,6 @@ final class HomeViewModel: ObservableObject {
 
     private func persistSourceState() {
         try? store.save(configSources, forKey: configSourcesKey)
-
-        if configSources.isEmpty {
-            store.removeValue(forKey: importedNodesKey)
-            return
-        }
-
-        if let selectedSourceID,
-           let selectedSource = configSources.first(where: { $0.id == selectedSourceID }) {
-            try? store.save(selectedSource.nodes, forKey: importedNodesKey)
-        } else if let first = configSources.first {
-            try? store.save(first.nodes, forKey: importedNodesKey)
-        }
     }
 
     private func loadRouteModeFromSettings() -> RouteMode {
@@ -351,13 +275,13 @@ extension HomeViewModel {
     static func previewMock() -> HomeViewModel {
         let viewModel = HomeViewModel(isPreviewMode: true)
         let hkNodes: [ServerNode] = [
-            .init(name: "🇭🇰 香港 01", host: "hk.example.com", port: 443, password: "demo", nodeType: "trojan", sni: "cdn.example.com", latency: 72),
-            .init(name: "🇯🇵 日本 01", host: "jp.example.com", port: 443, password: "demo", nodeType: "trojan", sni: "cdn.example.com", latency: 124),
-            .init(name: "🇺🇸 美国 01", host: "us.example.com", port: 443, password: "demo", nodeType: "trojan", sni: "cdn.example.com", latency: -1)
+            .init(name: "🇭🇰 香港 01", host: "hk.example.com", port: 443, password: "demo", nodeType: "vless", sni: "cdn.example.com", latency: 72),
+            .init(name: "🇯🇵 日本 01", host: "jp.example.com", port: 443, password: "demo", nodeType: "vless", sni: "cdn.example.com", latency: 124),
+            .init(name: "🇺🇸 美国 01", host: "us.example.com", port: 443, password: "demo", nodeType: "anytls", sni: "cdn.example.com", latency: -1)
         ]
         let sgNodes: [ServerNode] = [
-            .init(name: "🇸🇬 新加坡 01", host: "sg1.example.com", port: 443, password: "demo", nodeType: "trojan", sni: "cdn.example.com", latency: 38),
-            .init(name: "🇸🇬 新加坡 02", host: "sg2.example.com", port: 443, password: "demo", nodeType: "trojan", sni: "cdn.example.com", latency: 42)
+            .init(name: "🇸🇬 新加坡 01", host: "sg1.example.com", port: 443, password: "demo", nodeType: "vless", sni: "cdn.example.com", latency: 38),
+            .init(name: "🇸🇬 新加坡 02", host: "sg2.example.com", port: 443, password: "demo", nodeType: "anytls", sni: "cdn.example.com", latency: 42)
         ]
         viewModel.configSources = [
             ProxyConfigSource(name: "XFLTD", url: "https://example.com/a.yaml", nodes: hkNodes),
