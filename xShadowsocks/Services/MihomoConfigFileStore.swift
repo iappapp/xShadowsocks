@@ -1,12 +1,42 @@
 import Foundation
 
-/// Shared path + helpers for the downloaded mihomo YAML (`default.conf`).
+/// Shared path + helpers for the mihomo YAML config file.
+///
+/// The active config filename is persisted in `AppGroupStore` so the runtime
+/// (and the browser proxy-port reader) always load the same file the user
+/// selected. Imports write to `<configName>.yaml`; the legacy `default.conf`
+/// is only used as a fallback for existing installs that haven't migrated.
 enum MihomoConfigFileStore {
-    static let fileName = "default.conf"
-
     enum ProxyKind {
         case httpConnect
         case socks5
+    }
+
+    /// Filename used for the built-in default template (restore-defaults).
+    static let defaultTemplateFileName = "default.yaml"
+
+    /// Legacy filename, kept only as a migration fallback.
+    static let legacyFileName = "default.conf"
+
+    private static let store = AppGroupStore.shared
+
+    /// The currently active config filename (persisted). Defaults to the legacy
+    /// `default.conf` only if a migrated active name has not been set yet.
+    static var activeFileName: String {
+        get {
+            let saved = store.loadString(forKey: store.activeConfigFileNameKey, default: "")
+            if saved.isEmpty {
+                // Migrate: prefer legacy default.conf if it exists on disk.
+                if FileManager.default.fileExists(atPath: fileURL(forFileName: legacyFileName).path) {
+                    return legacyFileName
+                }
+                return defaultTemplateFileName
+            }
+            return saved
+        }
+        set {
+            store.saveValue(newValue, forKey: store.activeConfigFileNameKey)
+        }
     }
 
     static var directoryURL: URL {
@@ -15,11 +45,43 @@ enum MihomoConfigFileStore {
         return base.appendingPathComponent("mihomo", isDirectory: true)
     }
 
+    /// URL of the currently active config file.
     static var fileURL: URL {
+        fileURL(forFileName: activeFileName)
+    }
+
+    static func fileURL(forFileName fileName: String) -> URL {
         directoryURL.appendingPathComponent(fileName, isDirectory: false)
     }
 
+    /// Builds a safe filename `<sanitized name>.yaml` for a config display name.
+    static func fileName(forConfigName name: String) -> String {
+        "\(sanitizeFileName(name)).yaml"
+    }
+
+    /// Replaces characters that are unsafe in filenames with `_`.
+    static func sanitizeFileName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|", "."]
+        var result = ""
+        for ch in trimmed {
+            if forbidden.contains(ch) {
+                result.append("_")
+            } else {
+                result.append(ch)
+            }
+        }
+        if result.isEmpty { result = "config" }
+        return result
+    }
+
+    // MARK: - Save / load (active file)
+
     static func save(_ yaml: String) throws {
+        try save(yaml, as: activeFileName)
+    }
+
+    static func save(_ yaml: String, as fileName: String) throws {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let normalized = normalizeForMihomoYAML(yaml)
         guard let data = normalized.data(using: .utf8) else {
@@ -29,11 +91,15 @@ enum MihomoConfigFileStore {
                 userInfo: [NSLocalizedDescriptionKey: "配置内容编码失败"]
             )
         }
-        try data.write(to: fileURL, options: .atomic)
+        try data.write(to: fileURL(forFileName: fileName), options: .atomic)
     }
 
     static func loadText() -> String? {
-        guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+        loadText(forFileName: activeFileName)
+    }
+
+    static func loadText(forFileName fileName: String) -> String? {
+        guard let text = try? String(contentsOf: fileURL(forFileName: fileName), encoding: .utf8) else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : text
     }
@@ -42,7 +108,11 @@ enum MihomoConfigFileStore {
         FileManager.default.fileExists(atPath: fileURL.path)
     }
 
-    /// Reads the actual local proxy endpoint from saved YAML.
+    static func fileExists(forFileName fileName: String) -> Bool {
+        FileManager.default.fileExists(atPath: fileURL(forFileName: fileName).path)
+    }
+
+    /// Reads the actual local proxy endpoint from the active saved YAML.
     /// `mixed-port` and `port` support HTTP CONNECT; `socks-port` needs SOCKS5.
     static func readProxyEndpoint(defaultPort: Int = 7890) -> (port: Int, kind: ProxyKind) {
         guard let text = loadText() else { return (defaultPort, .httpConnect) }

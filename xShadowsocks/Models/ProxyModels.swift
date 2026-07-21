@@ -78,32 +78,6 @@ struct ServerNode: Identifiable, Equatable, Codable {
     }
 }
 
-struct ProxyConfigSource: Identifiable, Equatable, Codable {
-    let id: UUID
-    var name: String
-    var url: String
-    var nodes: [ServerNode]
-    var updatedAt: Date
-    /// Merged mihomo YAML (original subscription YAML + injected proxies).
-    /// When present, selecting this source re-writes `default.conf` before starting the proxy.
-    var yamlConfig: String?
-
-    init(
-        id: UUID = UUID(),
-        name: String,
-        url: String,
-        nodes: [ServerNode],
-        updatedAt: Date = Date(),
-        yamlConfig: String? = nil
-    ) {
-        self.id = id
-        self.name = name
-        self.url = url
-        self.nodes = nodes
-        self.updatedAt = updatedAt
-        self.yamlConfig = yamlConfig
-    }
-}
 
 enum RouteMode: String, CaseIterable, Identifiable {
     case configuration = "配置"

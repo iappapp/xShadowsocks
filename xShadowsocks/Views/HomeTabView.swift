@@ -4,7 +4,7 @@ struct HomeTabView: View {
     @StateObject private var viewModel: HomeViewModel
     @State private var isPresentingBrowser = false
     @State private var expandedSourceIDs: Set<UUID> = []
-    @State private var infoSource: ProxyConfigSource? = nil
+    @State private var infoSource: ConfigSourceModel? = nil
     @State private var infoNode: ServerNode? = nil
 
     @MainActor init(viewModel: HomeViewModel? = nil) {
@@ -127,7 +127,7 @@ struct HomeTabView: View {
         }
     }
 
-    private func sourceHeaderButton(_ source: ProxyConfigSource) -> some View {
+    private func sourceHeaderButton(_ source: ConfigSourceModel) -> some View {
         HStack(spacing: 10) {
             Button {
                 toggleSourceExpansion(source)
@@ -175,7 +175,7 @@ struct HomeTabView: View {
         }
     }
 
-    private func nodeRow(_ node: ServerNode, in source: ProxyConfigSource) -> some View {
+    private func nodeRow(_ node: ServerNode, in source: ConfigSourceModel) -> some View {
         HStack(spacing: 10) {
             if isNodeSelected(node, in: source) {
                 Image(systemName: "checkmark.circle.fill")
@@ -233,7 +233,7 @@ struct HomeTabView: View {
         }
     }
 
-    private func toggleSourceExpansion(_ source: ProxyConfigSource) {
+    private func toggleSourceExpansion(_ source: ConfigSourceModel) {
         viewModel.selectSource(source)
         if expandedSourceIDs.contains(source.id) {
             expandedSourceIDs.remove(source.id)
@@ -278,11 +278,11 @@ struct HomeTabView: View {
         return "\(node.nodeType.uppercased()) / \(methodText)"
     }
 
-    private func isNodeSelected(_ node: ServerNode, in source: ProxyConfigSource) -> Bool {
+    private func isNodeSelected(_ node: ServerNode, in source: ConfigSourceModel) -> Bool {
         viewModel.selectedSourceID == source.id && viewModel.selectedNodeID == node.id
     }
 
-    private func sourceInfoSheet(for source: ProxyConfigSource) -> some View {
+    private func sourceInfoSheet(for source: ConfigSourceModel) -> some View {
         NavigationStack {
             List {
                 Section("基础信息") {

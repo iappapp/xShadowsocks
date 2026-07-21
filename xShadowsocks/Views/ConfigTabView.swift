@@ -3,10 +3,9 @@ import SwiftUI
 struct ConfigTabView: View {
     @StateObject private var viewModel: ConfigViewModel
     @State private var isShowingImportSheet = false
+    @State private var contentSource: ConfigSourceModel? = nil
     @State private var importURL = ""
     @State private var importConfigName = ""
-    @State private var showRestoreConfirm = false
-    @State private var showFileInfo = false
 
     @MainActor init(viewModel: ConfigViewModel? = nil) {
         _viewModel = StateObject(wrappedValue: viewModel ?? ConfigViewModel())
@@ -20,10 +19,6 @@ struct ConfigTabView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(spacing: 0) {
-                        actionRow(icon: "arrow.uturn.backward", title: "恢复默认配置") {
-                            showRestoreConfirm = true
-                        }
-                        Divider().padding(.leading, 44)
                         actionRow(icon: "icloud.and.arrow.down", title: "导入订阅...") {
                             isShowingImportSheet = true
                         }
@@ -31,78 +26,23 @@ struct ConfigTabView: View {
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                    Text("本地文件")
+                    Text("配置文件")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 2)
 
-                    VStack(spacing: 0) {
-                        if let file = viewModel.localConfigFile {
-                            HStack(spacing: 10) {
-                                Circle()
-                                    .fill(.orange)
-                                    .frame(width: 10, height: 10)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(file.name)
-                                        .font(.headline)
-                                    Text("\(file.modifiedText) - \(file.sizeText)")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.down")
-                                    .font(.footnote)
-                                    .foregroundStyle(.blue)
-
-                                Button {
-                                    showFileInfo = true
-                                } label: {
-                                    Image(systemName: "info.circle")
-                                        .font(.title3)
-                                        .foregroundStyle(.blue)
-                                }
-                                .buttonStyle(.plain)
-                            }
+                    if viewModel.configSources.isEmpty {
+                        Text("未找到配置文件")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                        } else {
-                            Text("default.conf")
-                                .font(.headline)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                        }
-                    }
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                    Text("圆点代表默认配置，复选标记代表正在使用的配置。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    if let message = viewModel.configOperationMessage {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.green)
-                    }
-
-                    if let error = viewModel.importErrorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
-                    if !viewModel.configSources.isEmpty {
-                        Text("已导入配置")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 2)
-
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    } else {
                         VStack(spacing: 0) {
                             ForEach(viewModel.configSources) { source in
-                                sourceRow(source)
+                                configFileRow(source)
                                 if source.id != viewModel.configSources.last?.id {
                                     Divider().padding(.leading, 44)
                                 }
@@ -110,6 +50,12 @@ struct ConfigTabView: View {
                         }
                         .background(Color.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                    if let error = viewModel.importErrorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -125,34 +71,50 @@ struct ConfigTabView: View {
         .toolbarBackground(.blue, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    isShowingImportSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .disabled(viewModel.isImportingConfigFile)
-            }
-        }
         .sheet(isPresented: $isShowingImportSheet) {
             importSheet
         }
-        .alert("恢复默认配置", isPresented: $showRestoreConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("恢复", role: .destructive) {
-                viewModel.restoreDefaultConfigFile()
-            }
-        } message: {
-            Text("将使用默认 mihomo 模板覆盖当前 default.conf。")
+        .sheet(item: $contentSource) { source in
+            contentSheet(for: source)
         }
-        .alert("文件信息", isPresented: $showFileInfo) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            if let file = viewModel.localConfigFile {
-                Text("名称：\(file.name)\n修改时间：\(file.modifiedText)\n大小：\(file.sizeText)")
-            } else {
-                Text("未找到本地配置文件")
+    }
+
+    /// Config file row: filename + node count + update time come from `ConfigSourceModel`.
+    private func configFileRow(_ source: ConfigSourceModel) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.text.fill")
+                .foregroundStyle(.blue)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.fileName ?? source.name)
+                    .font(.headline)
+                Text("\(source.name) · \(source.nodes.count) 个节点 · \(source.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                contentSource = source
+            } label: {
+                Image(systemName: "eye")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                withAnimation {
+                    viewModel.deleteSource(source)
+                }
+            } label: {
+                Label("删除", systemImage: "trash")
             }
         }
     }
@@ -218,32 +180,22 @@ struct ConfigTabView: View {
         }
     }
 
-    private func sourceRow(_ source: ProxyConfigSource) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.text.fill")
-                .foregroundStyle(.blue)
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(source.name)
-                    .font(.body)
-                Text("\(source.nodes.count) 个节点 · \(source.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private func contentSheet(for source: ConfigSourceModel) -> some View {
+        let text = source.yamlConfig ?? MihomoConfigFileStore.loadText() ?? ""
+        return NavigationStack {
+            ScrollView {
+                Text(text.isEmpty ? "（配置文件为空）" : text)
+                    .font(.system(.footnote, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(16)
             }
-
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                withAnimation {
-                    viewModel.deleteSource(source)
+            .navigationTitle(source.fileName ?? source.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { contentSource = nil }
                 }
-            } label: {
-                Label("删除", systemImage: "trash")
             }
         }
     }

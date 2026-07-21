@@ -9,7 +9,7 @@ final class HomeViewModel: ObservableObject {
     @Published var localProxyStatusText = "未启动"
     @Published var routeMode: RouteMode = .configuration
     @Published var isTesting = false
-    @Published var configSources: [ProxyConfigSource] = []
+    @Published var configSources: [ConfigSourceModel] = []
     @Published var selectedSourceID: UUID?
     @Published var nodes: [ServerNode] = []
     @Published var selectedNodeID: UUID?
@@ -44,7 +44,7 @@ final class HomeViewModel: ObservableObject {
         nodes.first { $0.id == selectedNodeID }
     }
 
-    var selectedSource: ProxyConfigSource? {
+    var selectedSource: ConfigSourceModel? {
         configSources.first { $0.id == selectedSourceID }
     }
 
@@ -65,7 +65,7 @@ final class HomeViewModel: ObservableObject {
         selectedNodeID = node.id
     }
 
-    func selectSource(_ source: ProxyConfigSource) {
+    func selectSource(_ source: ConfigSourceModel) {
         selectedSourceID = source.id
         nodes = source.nodes
         if selectedNodeID == nil || !nodes.contains(where: { $0.id == selectedNodeID }) {
@@ -73,11 +73,11 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func nodes(for source: ProxyConfigSource) -> [ServerNode] {
+    func nodes(for source: ConfigSourceModel) -> [ServerNode] {
         source.nodes
     }
 
-    func deleteSource(_ source: ProxyConfigSource) {
+    func deleteSource(_ source: ConfigSourceModel) {
         guard let sourceIndex = configSources.firstIndex(where: { $0.id == source.id }) else {
             return
         }
@@ -102,7 +102,7 @@ final class HomeViewModel: ObservableObject {
         persistSourceState()
     }
 
-    func deleteNode(_ node: ServerNode, from source: ProxyConfigSource) {
+    func deleteNode(_ node: ServerNode, from source: ConfigSourceModel) {
         guard let sourceIndex = configSources.firstIndex(where: { $0.id == source.id }) else {
             return
         }
@@ -163,9 +163,11 @@ final class HomeViewModel: ObservableObject {
             routeMode = loadRouteModeFromSettings()
             proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
             // Re-activate the selected config file before starting the proxy so that
-            // `default.conf` always reflects the user's current selection.
-            if let yaml = selectedSource?.yamlConfig {
-                try? MihomoConfigFileStore.save(yaml)
+            // the runtime loads the user's current selection (each source has its own file).
+            if let source = selectedSource, let yaml = source.yamlConfig {
+                let fileName = source.fileName ?? MihomoConfigFileStore.fileName(forConfigName: source.name)
+                try? MihomoConfigFileStore.save(yaml, as: fileName)
+                MihomoConfigFileStore.activeFileName = fileName
             }
         }
 
@@ -210,24 +212,12 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Loading
 
     private func loadConfigSourcesFromStore() {
-        if let saved = store.load([ProxyConfigSource].self, forKey: configSourcesKey), !saved.isEmpty {
+        // The subscription URL is owned by the saved ConfigSourceModel (set at
+        // import time). Never synthesize a placeholder URL here — if there is
+        // no saved source, show nothing.
+        if let saved = store.load([ConfigSourceModel].self, forKey: configSourcesKey), !saved.isEmpty {
             configSources = saved
             return
-        }
-        // Fall back: synthesize a source from the saved default.conf.
-        if let yaml = MihomoConfigFileStore.loadText() {
-            let parsedNodes = MihomoYAMLConfigParser.parseProxies(from: yaml)
-            if !parsedNodes.isEmpty {
-                let source = ProxyConfigSource(
-                    name: "本地配置",
-                    url: "local://default.conf",
-                    nodes: parsedNodes,
-                    updatedAt: Date(),
-                    yamlConfig: yaml
-                )
-                configSources = [source]
-                return
-            }
         }
         configSources = []
     }
@@ -284,8 +274,8 @@ extension HomeViewModel {
             .init(name: "🇸🇬 新加坡 02", host: "sg2.example.com", port: 443, password: "demo", nodeType: "anytls", sni: "cdn.example.com", latency: 42)
         ]
         viewModel.configSources = [
-            ProxyConfigSource(name: "XFLTD", url: "https://example.com/a.yaml", nodes: hkNodes),
-            ProxyConfigSource(name: "备用订阅", url: "https://example.com/b.yaml", nodes: sgNodes)
+            ConfigSourceModel(name: "XFLTD", url: "https://example.com/a.yaml", nodes: hkNodes),
+            ConfigSourceModel(name: "备用订阅", url: "https://example.com/b.yaml", nodes: sgNodes)
         ]
         viewModel.selectedSourceID = viewModel.configSources.first?.id
         viewModel.nodes = hkNodes

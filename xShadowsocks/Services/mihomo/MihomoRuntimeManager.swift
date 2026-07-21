@@ -7,7 +7,6 @@ actor MihomoRuntimeManager {
     private let bridge: any MihomoCoreBridge
     private let fileManager: FileManager
     private let workingDirectoryURL: URL
-    private let configFileName = "default.conf"
     private let countryMMDBFileName = "Country.mmdb"
     private let countryMMDBDownloadURL = URL(string: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb")!
     private let logger = Logger(subsystem: "com.github.iappapp.xShadowsocks", category: "MihomoRuntime")
@@ -120,8 +119,10 @@ actor MihomoRuntimeManager {
     }
 
     /// Uses the downloaded/imported YAML file as-is (no rebuild / concat).
+    /// The filename is the active one tracked in `MihomoConfigFileStore`.
     private func resolveDownloadedConfigPaths() throws -> (configPath: String, workingDirectory: String) {
         try ensureDirectoryIfNeeded(workingDirectoryURL)
+        let configFileName = MihomoConfigFileStore.activeFileName
         let configURL = workingDirectoryURL.appendingPathComponent(configFileName)
         guard fileManager.fileExists(atPath: configURL.path) else {
             throw MihomoRuntimeError.missingConfigFile
