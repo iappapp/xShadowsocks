@@ -168,6 +168,33 @@ final class ConfigViewModel: ObservableObject {
 extension ConfigViewModel {
     static func previewMock() -> ConfigViewModel {
         let viewModel = ConfigViewModel(isPreviewMode: true)
+        let nodes: [ServerNode] = [
+            .init(name: "🇭🇰 香港 01", host: "hk1.example.com", port: 443,
+                  password: "demo-pass", nodeType: "vless", sni: "cdn.example.com", latency: 72),
+            .init(name: "🇯🇵 日本 01", host: "jp1.example.com", port: 443,
+                  password: "demo-pass", nodeType: "vless", sni: "cdn.example.com", latency: 124),
+            .init(name: "🇺🇸 美国 01", host: "us1.example.com", port: 443,
+                  password: "demo-pass", nodeType: "anytls", sni: "cdn.example.com", latency: -1)
+        ]
+        let sampleYAML = """
+        port: 7890
+        socks-port: 7891
+        mode: rule
+        proxies: []
+        proxy-groups: []
+        rules:
+          - MATCH,DIRECT
+        """
+        viewModel.configSources = [
+            ConfigSourceModel(
+                name: "XFLTD 订阅",
+                url: "https://api.xfltd.net/import",
+                nodes: nodes,
+                updatedAt: Date(),
+                yamlConfig: sampleYAML,
+                fileName: "XFLTD.yaml"
+            )
+        ]
         return viewModel
     }
 

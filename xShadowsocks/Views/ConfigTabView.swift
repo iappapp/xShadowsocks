@@ -12,57 +12,52 @@ struct ConfigTabView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(red: 242 / 255, green: 242 / 255, blue: 247 / 255)
-                .ignoresSafeArea()
+        List {
+            Section {
+                Button {
+                    isShowingImportSheet = true
+                } label: {
+                    actionRowContent(icon: "icloud.and.arrow.down", title: "导入订阅...")
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowBackground(Color.white)
+                .listRowSeparator(.hidden)
+            }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    VStack(spacing: 0) {
-                        actionRow(icon: "icloud.and.arrow.down", title: "导入订阅...") {
-                            isShowingImportSheet = true
-                        }
-                    }
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                    Text("配置文件")
-                        .font(.footnote)
+            Section {
+                if viewModel.configSources.isEmpty {
+                    Text("请导入订阅")
+                        .font(.headline)
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 2)
-
-                    if viewModel.configSources.isEmpty {
-                        Text("未找到配置文件")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(viewModel.configSources) { source in
-                                configFileRow(source)
-                                if source.id != viewModel.configSources.last?.id {
-                                    Divider().padding(.leading, 44)
-                                }
-                            }
-                        }
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-
-                    if let error = viewModel.importErrorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                        .listRowBackground(Color.white)
+                } else {
+                    ForEach(viewModel.configSources) { source in
+                        configFileRow(source)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
+            } header: {
+                Text("配置文件")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            .listRowBackground(Color.white)
+
+            if let error = viewModel.importErrorMessage {
+                Section {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+                .listRowBackground(Color.clear)
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(red: 242 / 255, green: 242 / 255, blue: 247 / 255))
         .onAppear {
             viewModel.onAppear()
         }
@@ -83,13 +78,14 @@ struct ConfigTabView: View {
     private func configFileRow(_ source: ConfigSourceModel) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "doc.text.fill")
-                .foregroundStyle(.blue)
-                .frame(width: 20)
+                .font(.system(size: 26))
+                .foregroundStyle(.red)
+                .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(source.fileName ?? source.name)
                     .font(.headline)
-                Text("\(source.name) · \(source.nodes.count) 个节点 · \(source.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("\(formatDate(source.updatedAt))")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -105,7 +101,7 @@ struct ConfigTabView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -123,7 +119,7 @@ struct ConfigTabView: View {
         NavigationStack {
             Form {
                 Section("订阅链接") {
-                    TextField("https://example.com/sub", text: $importURL)
+                    TextField("https://api.xfltd.net/import", text: $importURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -183,12 +179,21 @@ struct ConfigTabView: View {
     private func contentSheet(for source: ConfigSourceModel) -> some View {
         let text = source.yamlConfig ?? MihomoConfigFileStore.loadText() ?? ""
         return NavigationStack {
-            ScrollView {
-                Text(text.isEmpty ? "（配置文件为空）" : text)
-                    .font(.system(.footnote, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(16)
+            Group {
+                if text.isEmpty {
+                    ScrollView {
+                        Text("配置文件为空")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                    }
+                } else {
+                    // UITextView lazy-renders only the visible region, so opening
+                    // a multi-hundred-KB subscription YAML stays smooth. SwiftUI
+                    // Text + ScrollView would layout the whole string up front.
+                    ConfigTextView(text: text)
+                }
             }
             .navigationTitle(source.fileName ?? source.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -200,23 +205,59 @@ struct ConfigTabView: View {
         }
     }
 
-    private func actionRow(icon: String, title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .foregroundStyle(.blue)
-                    .frame(width: 20)
-                Text(title)
-                    .foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
+    private func actionRowContent(icon: String, title: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.blue)
+                .frame(width: 20)
+            Text(title)
+                .foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .contentShape(Rectangle())
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+}
+
+/// Read-only monospaced text viewer backed by `UITextView`.
+///
+/// `UITextView` lazy-renders only the visible text region and owns its own
+/// scroll view, so it stays smooth for very large subscription YAML payloads
+/// (hundreds of KB / many proxy nodes). SwiftUI `Text` inside a `ScrollView`
+/// would synchronously lay out the entire string up front and stall the sheet.
+private struct ConfigTextView: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = true
+        textView.alwaysBounceVertical = true
+        textView.backgroundColor = .clear
+        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.adjustsFontForContentSizeCategory = true
+        textView.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.text = text
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
     }
 }
 
