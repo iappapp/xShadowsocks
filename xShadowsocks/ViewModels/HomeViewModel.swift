@@ -17,7 +17,9 @@ final class HomeViewModel: ObservableObject {
     private let configSourcesKey = "config_sources"
     private let isPreviewMode: Bool
     private let store = AppGroupStore.shared
-    private var proxySelectorService: ProxySelectorService?
+    private var runtimeService: MihomoProxyRuntimeService?
+    private var localProxyPort: UInt16 = 7890
+    private var isProxyRunning = false
     private var isSyncingProxyState = false
 
     init(isPreviewMode: Bool = false) {
@@ -25,19 +27,25 @@ final class HomeViewModel: ObservableObject {
 
         guard !isPreviewMode else { return }
 
-        let selectorService = ProxySelectorService(store: store)
-        selectorService.onStatusTextChange = { [weak self] text in
-            self?.proxyStatusText = text
+        localProxyPort = Self.loadProxyPort(from: store)
+
+        let workingDirectoryURL: URL
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            workingDirectoryURL = appSupport.appendingPathComponent("mihomo", isDirectory: true)
+        } else {
+            workingDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("mihomo", isDirectory: true)
         }
-        selectorService.onFailure = { [weak self] message in
-            guard let self else { return }
-            self.proxyErrorMessage = message
-            self.showProxyError = true
-            self.isSyncingProxyState = true
-            self.isProxyEnabled = false
-            self.isSyncingProxyState = false
+
+        let runtimeManager = MihomoRuntimeManager(
+            bridge: DynamicMihomoCoreBridge(),
+            workingDirectoryURL: workingDirectoryURL
+        )
+        let service = MihomoProxyRuntimeService(runtimeManager: runtimeManager)
+        service.onStateChange = { [weak self] state in
+            self?.handleRuntimeState(state)
         }
-        self.proxySelectorService = selectorService
+        self.runtimeService = service
     }
 
     var selectedNode: ServerNode? {
@@ -60,7 +68,7 @@ final class HomeViewModel: ObservableObject {
         loadConfigSourcesFromStore()
         ensureSelectedSourceAndNode()
         routeMode = loadRouteModeFromSettings()
-        proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
+        syncPortFromSettings()
     }
 
     func persistRouteMode() {
@@ -178,7 +186,7 @@ final class HomeViewModel: ObservableObject {
                 return
             }
             routeMode = loadRouteModeFromSettings()
-            proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
+            syncPortFromSettings()
             // Re-activate the selected config file before starting the proxy so that
             // the runtime loads the user's current selection (each source has its own file).
             // For a single unselected config, fall back to that sole source.
@@ -195,13 +203,7 @@ final class HomeViewModel: ObservableObject {
             defer { isApplyingProxyState = false }
 
             do {
-                try await proxySelectorService?.setProxyEnabled(
-                    enabled: enabled,
-                    nodes: nodes,
-                    selectedNode: selectedNode,
-                    selectedNodeID: selectedNodeID,
-                    routeMode: mapRouteMode(routeMode)
-                )
+                try await applyProxyEnabled(enabled)
 
                 try? await Task.sleep(for: .milliseconds(250))
                 isSyncingProxyState = true
@@ -217,6 +219,55 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    private func applyProxyEnabled(_ enabled: Bool) async throws {
+        guard let runtimeService else { return }
+
+        let request = ProxyRuntimeRequest(
+            nodes: nodes,
+            selectedNode: selectedNode,
+            selectedNodeID: selectedNodeID,
+            routeMode: mapRouteMode(routeMode),
+            localProxyPort: localProxyPort
+        )
+
+        if enabled {
+            if isProxyRunning {
+                try await runtimeService.refreshConfig(with: request)
+            } else {
+                try await runtimeService.start(with: request)
+            }
+            isProxyRunning = true
+        } else {
+            try await runtimeService.stop()
+            isProxyRunning = false
+        }
+    }
+
+    private func syncPortFromSettings() {
+        let latestPort = Self.loadProxyPort(from: store)
+        guard latestPort != localProxyPort else { return }
+        guard !isProxyEnabled else { return }
+        localProxyPort = latestPort
+    }
+
+    private func handleRuntimeState(_ state: ProxyRuntimeState) {
+        switch state {
+        case .stopped:
+            proxyStatusText = "未启动"
+        case .starting:
+            proxyStatusText = "启动中"
+        case .running(let statusDetail):
+            proxyStatusText = "运行中(\(statusDetail))"
+        case .failed(let message):
+            proxyStatusText = "启动失败"
+            proxyErrorMessage = message
+            showProxyError = true
+            isSyncingProxyState = true
+            isProxyEnabled = false
+            isSyncingProxyState = false
+        }
+    }
+
     private func mapRouteMode(_ routeMode: RouteMode) -> MihomoRouteMode {
         switch routeMode {
         case .configuration, .scenario:
@@ -226,6 +277,12 @@ final class HomeViewModel: ObservableObject {
         case .direct:
             return .direct
         }
+    }
+
+    private static func loadProxyPort(from store: AppGroupStore) -> UInt16 {
+        let rawValue = store.loadInt(forKey: store.proxyPortKey, default: 7890)
+        let clamped = min(max(rawValue, 2000), 9000)
+        return UInt16(clamped)
     }
 
     // MARK: - Loading

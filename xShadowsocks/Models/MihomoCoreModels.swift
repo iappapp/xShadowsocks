@@ -123,46 +123,6 @@ struct MihomoCoreBridgeHandlers: Sendable {
     let stop: @Sendable () throws -> Void
 }
 
-final class ClosureMihomoCoreBridge: MihomoCoreBridge {
-    private let handlers: MihomoCoreBridgeHandlers
-
-    init(handlers: MihomoCoreBridgeHandlers) {
-        self.handlers = handlers
-    }
-
-    var isRunning: Bool {
-        handlers.isRunning()
-    }
-
-    func start(configPath: String, workingDirectory: String) throws {
-        try handlers.start(configPath, workingDirectory)
-    }
-
-    func reload(configPath: String) throws {
-        try handlers.reload(configPath)
-    }
-
-    func stop() throws {
-        try handlers.stop()
-    }
-}
-
-final class PlaceholderMihomoCoreBridge: MihomoCoreBridge {
-    var isRunning: Bool { false }
-
-    func start(configPath: String, workingDirectory: String) throws {
-        throw MihomoRuntimeError.bridgeNotReady
-    }
-
-    func reload(configPath: String) throws {
-        throw MihomoRuntimeError.bridgeNotReady
-    }
-
-    func stop() throws {
-        throw MihomoRuntimeError.bridgeNotReady
-    }
-}
-
 enum MihomoRuntimeError: LocalizedError {
     case missingSelectedNode
     case unsupportedNodeType(String)
