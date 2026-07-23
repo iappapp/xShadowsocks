@@ -121,8 +121,11 @@ enum MihomoYAMLProxyInjector {
                     return name
                 }
             }
-            if trimmed.hasPrefix("name:") {
-                return unquote(String(trimmed.dropFirst("name:".count)).trimmingCharacters(in: .whitespacesAndNewlines))
+            let content = trimmed.hasPrefix("-")
+                ? trimmed.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
+                : trimmed
+            if content.hasPrefix("name:") {
+                return unquote(String(content.dropFirst("name:".count)).trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
         return nil
