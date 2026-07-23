@@ -68,7 +68,7 @@ struct HomeTabView: View {
 
                     Toggle("", isOn: $viewModel.isProxyEnabled)
                         .labelsHidden()
-                        .disabled(viewModel.isApplyingProxyState)
+                        .disabled(viewModel.isApplyingProxyState || !viewModel.canConnect)
                 }
 
                 Picker("全局路由", selection: $viewModel.routeMode) {
@@ -78,19 +78,27 @@ struct HomeTabView: View {
                 }
                 .pickerStyle(.segmented)
                 .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 12, trailing: 16))
+
+                if !viewModel.canConnect && viewModel.configSources.count > 1 {
+                    Text("请选择一个配置，再开启连接")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .listRowBackground(Color.clear)
+                }
             }
 
             Section {
-                Text("Mihomo：\(viewModel.localProxyStatusText)")
+                Text("Mihomo：\(viewModel.proxyStatusText)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section("我的配置") {
                 if viewModel.configSources.isEmpty {
-                    Text("暂无配置，请到「配置」页导入")
+                    Text("暂无配置，请导入订阅")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                 } else {
                     sourceListContent
                 }
@@ -128,9 +136,15 @@ struct HomeTabView: View {
     }
 
     private func sourceHeaderButton(_ source: ConfigSourceModel) -> some View {
-        HStack(spacing: 10) {
+        let isSelected = viewModel.selectedSourceID == source.id
+        return HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 22))
+                .foregroundStyle(isSelected ? .blue : .secondary)
+                .frame(width: 24)
+
             Button {
-                toggleSourceExpansion(source)
+                toggleExpansion(source)
             } label: {
                 Image(systemName: expandedSourceIDs.contains(source.id) ? "chevron.down" : "chevron.right")
                     .font(.body.weight(.semibold))
@@ -163,6 +177,11 @@ struct HomeTabView: View {
             .buttonStyle(.plain)
         }
         .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.selectSource(source)
+            expandedSourceIDs.insert(source.id)
+        }
+        .listRowBackground(isSelected ? Color.blue.opacity(0.08) : Color(.secondarySystemGroupedBackground))
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 withAnimation {
@@ -180,11 +199,11 @@ struct HomeTabView: View {
             if isNodeSelected(node, in: source) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.blue)
-                    .frame(width: 20)
+                    .frame(width: 32)
             } else {
                 Image(systemName: "circle")
                     .foregroundStyle(.tertiary)
-                    .frame(width: 20)
+                    .frame(width: 32)
             }
 
             Text(nodeBadgeFlag(node))
@@ -233,8 +252,7 @@ struct HomeTabView: View {
         }
     }
 
-    private func toggleSourceExpansion(_ source: ConfigSourceModel) {
-        viewModel.selectSource(source)
+    private func toggleExpansion(_ source: ConfigSourceModel) {
         if expandedSourceIDs.contains(source.id) {
             expandedSourceIDs.remove(source.id)
         } else {

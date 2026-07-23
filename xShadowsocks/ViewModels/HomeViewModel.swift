@@ -6,7 +6,7 @@ final class HomeViewModel: ObservableObject {
     @Published var isApplyingProxyState = false
     @Published var showProxyError = false
     @Published var proxyErrorMessage = ""
-    @Published var localProxyStatusText = "未启动"
+    @Published var proxyStatusText = "未启动"
     @Published var routeMode: RouteMode = .configuration
     @Published var isTesting = false
     @Published var configSources: [ConfigSourceModel] = []
@@ -27,7 +27,7 @@ final class HomeViewModel: ObservableObject {
 
         let selectorService = ProxySelectorService(store: store)
         selectorService.onStatusTextChange = { [weak self] text in
-            self?.localProxyStatusText = text
+            self?.proxyStatusText = text
         }
         selectorService.onFailure = { [weak self] message in
             guard let self else { return }
@@ -46,6 +46,13 @@ final class HomeViewModel: ObservableObject {
 
     var selectedSource: ConfigSourceModel? {
         configSources.first { $0.id == selectedSourceID }
+    }
+
+    /// Whether the user is allowed to start the proxy. Requires at least one
+    /// imported config; when more than one config exists the user must pick one
+    /// first (a single config is auto-selected and usable without a tap).
+    var canConnect: Bool {
+        !configSources.isEmpty && (configSources.count == 1 || selectedSourceID != nil)
     }
 
     func onAppear() {
@@ -160,11 +167,23 @@ final class HomeViewModel: ObservableObject {
         guard !isApplyingProxyState else { return }
 
         if enabled {
+            // Refuse to start without a usable config: with multiple configs the
+            // user must select one so the right YAML is loaded by mihomo.
+            guard canConnect else {
+                proxyErrorMessage = "请先选择一个配置"
+                showProxyError = true
+                isSyncingProxyState = true
+                isProxyEnabled = false
+                isSyncingProxyState = false
+                return
+            }
             routeMode = loadRouteModeFromSettings()
             proxySelectorService?.syncPortFromSettings(isProxyEnabled: isProxyEnabled)
             // Re-activate the selected config file before starting the proxy so that
             // the runtime loads the user's current selection (each source has its own file).
-            if let source = selectedSource, let yaml = source.yamlConfig {
+            // For a single unselected config, fall back to that sole source.
+            let activeSource = selectedSource ?? configSources.first
+            if let source = activeSource, let yaml = source.yamlConfig {
                 let fileName = source.fileName ?? MihomoConfigFileStore.fileName(forConfigName: source.name)
                 try? MihomoConfigFileStore.save(yaml, as: fileName)
                 MihomoConfigFileStore.activeFileName = fileName
@@ -223,7 +242,10 @@ final class HomeViewModel: ObservableObject {
     }
 
     private func ensureSelectedSourceAndNode() {
-        if selectedSourceID == nil {
+        // Only auto-select when there is a single config (no ambiguity). With
+        // multiple configs the user must explicitly pick one before connecting;
+        // see `canConnect`.
+        if selectedSourceID == nil, configSources.count == 1 {
             selectedSourceID = configSources.first?.id
         }
 
@@ -282,7 +304,7 @@ extension HomeViewModel {
         viewModel.selectedNodeID = viewModel.nodes.first?.id
         viewModel.routeMode = .proxy
         viewModel.isProxyEnabled = true
-        viewModel.localProxyStatusText = "运行中 (Mixed 7890)"
+        viewModel.proxyStatusText = "运行中 (Mixed 7890)"
         return viewModel
     }
 }
