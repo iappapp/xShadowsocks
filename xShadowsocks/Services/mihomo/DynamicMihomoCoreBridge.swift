@@ -7,14 +7,12 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
     private typealias ReloadFn = @convention(c) (_ configPath: UnsafePointer<CChar>) -> Int32
     private typealias StopFn = @convention(c) () -> Int32
     private typealias IsRunningFn = @convention(c) () -> Int32
-    private typealias LastErrorFn = @convention(c) () -> UnsafeMutablePointer<CChar>?
 
     private struct ResolvedSymbols {
         let start: StartFn
         let reload: ReloadFn
         let stop: StopFn
         let isRunning: IsRunningFn?
-        let lastError: LastErrorFn?
     }
 
     private let lock = NSLock()
@@ -27,7 +25,6 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
     private let symbolReloadCandidates = ["mihomo_reload_config", "mihomo_reload"]
     private let symbolStopCandidates = ["mihomo_stop"]
     private let symbolIsRunningCandidates = ["mihomo_is_running"]
-    private let symbolLastErrorCandidates = ["mihomo_get_last_error"]
 
     var isRunning: Bool {
         lock.lock()
@@ -49,7 +46,6 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
         defer { lock.unlock() }
 
         logger.info("start config=\(configPath, privacy: .public) workdir=\(workingDirectory, privacy: .public)")
-        logLocalFileState(configPath: configPath, workingDirectory: workingDirectory)
 
         let symbols = try ensureResolvedSymbolsLocked()
         let code = configPath.withCString { configCString in
@@ -59,13 +55,13 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
         }
 
         if code != 0 {
-            let detail = readLastErrorLocked(from: symbols) ?? "code \(code)"
-            let logTail = readBridgeLogTail(workingDirectory: workingDirectory)
+            let detail = "code \(code)"
             logger.error("start failed: \(detail, privacy: .public)")
-            if !logTail.isEmpty {
-                logger.error("bridge log tail:\n\(logTail, privacy: .public)")
-            }
-            throw makeOperationError(operation: "start", code: code, detail: detail, logTail: logTail)
+            throw NSError(
+                domain: "DynamicMihomoCoreBridge",
+                code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: "Mihomo start failed (\(code)): \(detail)"]
+            )
         }
 
         logger.info("start success")
@@ -83,9 +79,13 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
         }
 
         if code != 0 {
-            let detail = readLastErrorLocked(from: symbols) ?? "code \(code)"
+            let detail = "code \(code)"
             logger.error("reload failed: \(detail, privacy: .public)")
-            throw makeOperationError(operation: "reload", code: code, detail: detail, logTail: "")
+            throw NSError(
+                domain: "DynamicMihomoCoreBridge",
+                code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: "Mihomo reload failed (\(code)): \(detail)"]
+            )
         }
 
         logger.info("reload success")
@@ -100,9 +100,13 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
         let symbols = try ensureResolvedSymbolsLocked()
         let code = symbols.stop()
         if code != 0 {
-            let detail = readLastErrorLocked(from: symbols) ?? "code \(code)"
+            let detail = "code \(code)"
             logger.error("stop failed: \(detail, privacy: .public)")
-            throw makeOperationError(operation: "stop", code: code, detail: detail, logTail: "")
+            throw NSError(
+                domain: "DynamicMihomoCoreBridge",
+                code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: "Mihomo stop failed (\(code)): \(detail)"]
+            )
         }
 
         logger.info("stop success")
@@ -154,73 +158,17 @@ final class DynamicMihomoCoreBridge: @unchecked Sendable, MihomoCoreBridge {
         }
 
         let isRunning = resolveSymbol(candidates: symbolIsRunningCandidates, handles: handles, as: IsRunningFn.self)
-        let lastError = resolveSymbol(candidates: symbolLastErrorCandidates, handles: handles, as: LastErrorFn.self)
-        if lastError == nil {
-            logger.warning("mihomo_get_last_error symbol not found; detail errors unavailable")
-        }
 
         let result = ResolvedSymbols(
             start: start,
             reload: reload,
             stop: stop,
-            isRunning: isRunning,
-            lastError: lastError
+            isRunning: isRunning
         )
         self.resolved = result
         self.loadedHandles = handles
         logger.info("MihomoCore symbols resolved")
         return result
-    }
-
-    private func readLastErrorLocked(from symbols: ResolvedSymbols) -> String? {
-        guard let lastError = symbols.lastError else { return nil }
-        guard let ptr = lastError() else { return nil }
-        defer { free(ptr) }
-        let message = String(cString: ptr)
-        return message.isEmpty ? nil : message
-    }
-
-    private func logLocalFileState(configPath: String, workingDirectory: String) {
-        let fm = FileManager.default
-        let configExists = fm.fileExists(atPath: configPath)
-        let mmdbPath = (workingDirectory as NSString).appendingPathComponent("Country.mmdb")
-        let mmdbExists = fm.fileExists(atPath: mmdbPath)
-        var sizeText = "n/a"
-        if let attrs = try? fm.attributesOfItem(atPath: configPath),
-           let size = attrs[.size] as? NSNumber {
-            sizeText = "\(size.intValue)"
-        }
-        logger.info("fs configExists=\(configExists) size=\(sizeText, privacy: .public) mmdbExists=\(mmdbExists)")
-    }
-
-    private func readBridgeLogTail(workingDirectory: String, maxBytes: Int = 4_096) -> String {
-        let logURL = URL(fileURLWithPath: workingDirectory).appendingPathComponent("mihomo-bridge.log")
-        guard let handle = try? FileHandle(forReadingFrom: logURL) else { return "" }
-        defer { try? handle.close() }
-
-        let size = (try? handle.seekToEnd()) ?? 0
-        let offset = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
-        do {
-            try handle.seek(toOffset: offset)
-            guard let data = try handle.readToEnd(), !data.isEmpty else { return "" }
-            return String(decoding: data, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch {
-            return ""
-        }
-    }
-
-    private func makeOperationError(operation: String, code: Int32, detail: String, logTail: String) -> NSError {
-        var message = "Mihomo \(operation) failed (\(code)): \(detail)"
-        if !logTail.isEmpty {
-            let clipped = logTail.split(separator: "\n").suffix(8).joined(separator: "\n")
-            message += "\n—— bridge log ——\n\(clipped)"
-        }
-        return NSError(
-            domain: "DynamicMihomoCoreBridge",
-            code: Int(code),
-            userInfo: [NSLocalizedDescriptionKey: message]
-        )
     }
 
     private func makeBridgeNotReadyError(reason: String, frameworkCandidates: [String], missingSymbols: [String]) -> NSError {

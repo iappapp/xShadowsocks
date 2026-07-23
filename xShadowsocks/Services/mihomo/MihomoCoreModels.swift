@@ -10,9 +10,6 @@ enum MihomoRuntimeState: Equatable, Sendable {
 struct MihomoRuntimeSnapshot: Equatable, Sendable {
     let configPath: String
     let workingDirectory: String
-    let mixedPort: Int
-    let socksPort: Int
-    let externalController: String
 }
 
 enum MihomoRouteMode: String, CaseIterable, Sendable {

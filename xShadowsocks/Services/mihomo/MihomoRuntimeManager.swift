@@ -7,8 +7,7 @@ actor MihomoRuntimeManager {
     private let bridge: any MihomoCoreBridge
     private let fileManager: FileManager
     private let workingDirectoryURL: URL
-    private let countryMMDBFileName = "Country.mmdb"
-    private let countryMMDBDownloadURL = URL(string: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb")!
+    private let mmdbStore: CountryMMDBStore
     private let logger = Logger(subsystem: "com.github.iappapp.xShadowsocks", category: "MihomoRuntime")
 
     private var currentSnapshot: MihomoRuntimeSnapshot?
@@ -21,6 +20,7 @@ actor MihomoRuntimeManager {
         self.bridge = bridge
         self.workingDirectoryURL = workingDirectoryURL
         self.fileManager = fileManager
+        self.mmdbStore = CountryMMDBStore(fileManager: fileManager)
         logger.info("init workdir=\(workingDirectoryURL.path, privacy: .public)")
     }
 
@@ -35,7 +35,7 @@ actor MihomoRuntimeManager {
         do {
             let paths = try resolveDownloadedConfigPaths()
             logger.info("resolved config=\(paths.configPath, privacy: .public)")
-            _ = try await ensureCountryMMDB()
+            _ = try await mmdbStore.ensureMMDB(in: workingDirectoryURL)
             logger.info("Country.mmdb ready")
 
             if bridge.isRunning {
@@ -46,16 +46,12 @@ actor MihomoRuntimeManager {
                 try bridge.start(configPath: paths.configPath, workingDirectory: paths.workingDirectory)
             }
 
-            let ports = Self.readPortHints(from: URL(fileURLWithPath: paths.configPath), fallback: request)
             let snapshot = MihomoRuntimeSnapshot(
                 configPath: paths.configPath,
-                workingDirectory: paths.workingDirectory,
-                mixedPort: ports.mixedPort,
-                socksPort: ports.socksPort,
-                externalController: ports.externalController
+                workingDirectory: paths.workingDirectory
             )
             currentSnapshot = snapshot
-            logger.info("runtime running mixed=\(ports.mixedPort) socks=\(ports.socksPort) ctl=\(ports.externalController, privacy: .public)")
+            logger.info("runtime running config=\(paths.configPath, privacy: .public)")
             notify(.running(snapshot))
         } catch {
             logger.error("runtime start failed: \(error.localizedDescription, privacy: .public)")
@@ -68,19 +64,15 @@ actor MihomoRuntimeManager {
         logger.info("runtime reload begin")
         do {
             let paths = try resolveDownloadedConfigPaths()
-            _ = try await ensureCountryMMDB()
+            _ = try await mmdbStore.ensureMMDB(in: workingDirectoryURL)
             try bridge.reload(configPath: paths.configPath)
 
-            let ports = Self.readPortHints(from: URL(fileURLWithPath: paths.configPath), fallback: request)
             let snapshot = MihomoRuntimeSnapshot(
                 configPath: paths.configPath,
-                workingDirectory: paths.workingDirectory,
-                mixedPort: ports.mixedPort,
-                socksPort: ports.socksPort,
-                externalController: ports.externalController
+                workingDirectory: paths.workingDirectory
             )
             currentSnapshot = snapshot
-            logger.info("runtime reload ok mixed=\(ports.mixedPort)")
+            logger.info("runtime reload ok config=\(paths.configPath, privacy: .public)")
             notify(.running(snapshot))
         } catch {
             logger.error("runtime reload failed: \(error.localizedDescription, privacy: .public)")
@@ -130,50 +122,6 @@ actor MihomoRuntimeManager {
         return (configURL.path, workingDirectoryURL.path)
     }
 
-    /// Best-effort port/controller hints for status UI; mihomo itself reads the file.
-    private static func readPortHints(
-        from configURL: URL,
-        fallback: MihomoBootstrapRequest
-    ) -> (mixedPort: Int, socksPort: Int, externalController: String) {
-        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
-            return (
-                fallback.mixedPort,
-                fallback.socksPort,
-                "127.0.0.1:\(fallback.externalControllerPort)"
-            )
-        }
-
-        var mixed = fallback.mixedPort
-        var socks = fallback.socksPort
-        var controller = "127.0.0.1:\(fallback.externalControllerPort)"
-
-        for rawLine in text.components(separatedBy: .newlines) {
-            guard !rawLine.hasPrefix(" "), !rawLine.hasPrefix("\t") else { continue }
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.hasPrefix("#"), let sep = line.firstIndex(of: ":") else { continue }
-            let key = String(line[..<sep]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            var value = String(line[line.index(after: sep)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if (value.hasPrefix("'") && value.hasSuffix("'")) || (value.hasPrefix("\"") && value.hasSuffix("\"")) {
-                value = String(value.dropFirst().dropLast())
-            }
-            switch key {
-            case "mixed-port":
-                if let port = Int(value) { mixed = port }
-            case "socks-port":
-                if let port = Int(value) { socks = port }
-            case "port":
-                // Classic Clash HTTP port; use as mixed fallback when mixed-port absent.
-                if mixed == fallback.mixedPort, let port = Int(value) { mixed = port }
-            case "external-controller":
-                if !value.isEmpty { controller = value }
-            default:
-                break
-            }
-        }
-
-        return (mixed, socks, controller)
-    }
-
     private func ensureDirectoryIfNeeded(_ directoryURL: URL) throws {
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory) {
@@ -188,48 +136,6 @@ actor MihomoRuntimeManager {
 
     private func notify(_ state: MihomoRuntimeState) {
         onStateChange?(state)
-    }
-
-    private func ensureCountryMMDB() async throws -> URL {
-        try ensureDirectoryIfNeeded(workingDirectoryURL)
-        let destinationURL = workingDirectoryURL.appendingPathComponent(countryMMDBFileName)
-
-        if fileManager.fileExists(atPath: destinationURL.path) {
-            return destinationURL
-        }
-
-        if let bundledURL = Bundle.main.url(forResource: "Country", withExtension: "mmdb") {
-            do {
-                try fileManager.copyItem(at: bundledURL, to: destinationURL)
-                return destinationURL
-            } catch {
-                if fileManager.fileExists(atPath: destinationURL.path) {
-                    try? fileManager.removeItem(at: destinationURL)
-                }
-            }
-        }
-
-        return try await downloadCountryMMDB()
-    }
-
-    private func downloadCountryMMDB() async throws -> URL {
-
-        var request = URLRequest(url: countryMMDBDownloadURL)
-        request.timeoutInterval = 30
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse,
-           !(200...299).contains(http.statusCode) {
-            throw NSError(
-                domain: "MihomoRuntimeManager",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "下载 Country.mmdb 失败，状态码: \(http.statusCode)"]
-            )
-        }
-
-        let destinationURL = workingDirectoryURL.appendingPathComponent(countryMMDBFileName)
-        try data.write(to: destinationURL, options: .atomic)
-        return destinationURL
     }
 }
 

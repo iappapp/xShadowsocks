@@ -30,6 +30,10 @@ final class MihomoProxyRuntimeService: ProxyRuntimeServiceProtocol {
     var onStateChange: ((ProxyRuntimeState) -> Void)?
 
     private let runtimeManager: MihomoRuntimeManager
+    /// Last known local proxy port, used to render the running status detail.
+    /// The runtime manager no longer parses ports from YAML; the port comes
+    /// straight from the request that started/refreshed the proxy.
+    private var lastLocalProxyPort: UInt16 = 7890
 
     init(runtimeManager: MihomoRuntimeManager) {
         self.runtimeManager = runtimeManager
@@ -38,13 +42,14 @@ final class MihomoProxyRuntimeService: ProxyRuntimeServiceProtocol {
         Task {
             await runtimeManager.setOnStateChange { state in
                 Task { @MainActor in
-                    weakBox.value?.onStateChange?(Self.mapMihomoState(state))
+                    weakBox.value?.onStateChange?(Self.mapMihomoState(state, port: weakBox.value?.lastLocalProxyPort ?? 7890))
                 }
             }
         }
     }
 
     func start(with request: ProxyRuntimeRequest) async throws {
+        lastLocalProxyPort = request.localProxyPort
         try await runtimeManager.start(with: makeBootstrapRequest(from: request))
     }
 
@@ -53,11 +58,12 @@ final class MihomoProxyRuntimeService: ProxyRuntimeServiceProtocol {
     }
 
     func refreshConfig(with request: ProxyRuntimeRequest) async throws {
+        lastLocalProxyPort = request.localProxyPort
         try await runtimeManager.reload(with: makeBootstrapRequest(from: request))
     }
 
     func currentState() async -> ProxyRuntimeState {
-        Self.mapMihomoState(await runtimeManager.currentState())
+        Self.mapMihomoState(await runtimeManager.currentState(), port: lastLocalProxyPort)
     }
 
     private func makeBootstrapRequest(from request: ProxyRuntimeRequest) -> MihomoBootstrapRequest {
@@ -95,14 +101,14 @@ final class MihomoProxyRuntimeService: ProxyRuntimeServiceProtocol {
         )
     }
 
-    private static func mapMihomoState(_ state: MihomoRuntimeState) -> ProxyRuntimeState {
+    private static func mapMihomoState(_ state: MihomoRuntimeState, port: UInt16) -> ProxyRuntimeState {
         switch state {
         case .stopped:
             return .stopped
         case .starting:
             return .starting
-        case .running(let snapshot):
-            return .running(statusDetail: "Mixed \(snapshot.mixedPort)")
+        case .running:
+            return .running(statusDetail: "Mixed \(port)")
         case .failed(let message):
             return .failed(message)
         }
