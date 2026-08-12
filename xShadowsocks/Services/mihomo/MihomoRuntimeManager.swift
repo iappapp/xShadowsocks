@@ -36,7 +36,7 @@ actor MihomoRuntimeManager {
             let paths = try resolveDownloadedConfigPaths()
             logger.info("resolved config=\(paths.configPath, privacy: .public)")
             _ = try await mmdbStore.ensureMMDB(in: workingDirectoryURL)
-            logger.info("Country.mmdb ready")
+            logger.info("Country.mmdb / GeoSite.dat ready")
 
             if bridge.isRunning {
                 logger.info("bridge already running -> reload")

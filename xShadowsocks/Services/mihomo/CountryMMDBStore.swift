@@ -1,23 +1,16 @@
 import Foundation
 import os
 
-/// Owns the `Country.mmdb` GeoIP database lifecycle for the mihomo runtime.
+/// Owns bundled geo data lifecycle for the mihomo runtime.
 ///
-/// Responsibilities (single, cohesive concern):
-///   1. Ensure the mmdb file is present in a given working directory.
-///   2. Prefer copying a bundled `Country.mmdb` (offline, instant).
-///   3. Fall back to downloading the latest release from the upstream CDN.
+/// Responsibilities:
+///   1. Ensure `Country.mmdb` and `GeoSite.dat` exist in the working directory.
+///   2. Copy them from app bundle resources when missing.
 ///
-/// Extracted from `MihomoRuntimeManager` so the runtime manager stays focused
-/// on start/reload/stop orchestration.
+/// Both files ship inside the app bundle, so no network download is needed.
 final class CountryMMDBStore {
     static let fileName = "Country.mmdb"
-
-    /// Upstream release asset; kept here so the URL lives next to the download
-    /// code that consumes it.
-    private static let downloadURL = URL(
-        string: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb"
-    )!
+    static let geoSiteFileName = "GeoSite.dat"
 
     private static let logger = Logger(
         subsystem: "com.github.iappapp.xShadowsocks",
@@ -30,56 +23,58 @@ final class CountryMMDBStore {
         self.fileManager = fileManager
     }
 
-    /// Guarantees `Country.mmdb` exists in `directoryURL` and returns its file URL.
-    /// Order of resolution: existing file → bundled copy → remote download.
+    /// Guarantees geo data files exist in `directoryURL`.
+    /// Order of resolution per file: existing file → bundled copy. Never downloads.
     func ensureMMDB(in directoryURL: URL) async throws -> URL {
         try ensureDirectoryIfNeeded(directoryURL)
-        let destinationURL = directoryURL.appendingPathComponent(Self.fileName)
+        let mmdbURL = try ensureBundledFile(
+            resourceName: "Country",
+            resourceExtension: "mmdb",
+            destinationFileName: Self.fileName,
+            in: directoryURL
+        )
+        _ = try ensureBundledFile(
+            resourceName: "GeoSite",
+            resourceExtension: "dat",
+            destinationFileName: Self.geoSiteFileName,
+            in: directoryURL
+        )
+        return mmdbURL
+    }
+
+    private func ensureBundledFile(
+        resourceName: String,
+        resourceExtension: String,
+        destinationFileName: String,
+        in directoryURL: URL
+    ) throws -> URL {
+        let destinationURL = directoryURL.appendingPathComponent(destinationFileName)
 
         if fileManager.fileExists(atPath: destinationURL.path) {
-            Self.logger.info("mmdb already present at \(destinationURL.path, privacy: .public)")
+            Self.logger.info("\(destinationFileName, privacy: .public) already present at \(destinationURL.path, privacy: .public)")
             return destinationURL
         }
 
-        if let bundledURL = Bundle.main.url(forResource: "Country", withExtension: "mmdb") {
-            do {
-                try fileManager.copyItem(at: bundledURL, to: destinationURL)
-                Self.logger.info("mmdb copied from bundle")
-                return destinationURL
-            } catch {
-                    Self.logger.error("bundle copy failed: \(error.localizedDescription, privacy: .public)")
-                    if fileManager.fileExists(atPath: destinationURL.path) {
-                        try? fileManager.removeItem(at: destinationURL)
-                    }
-                // Fall through to download.
-            }
-        }
-
-        return try await download(into: directoryURL)
-    }
-
-    /// Downloads `Country.mmdb` into `directoryURL` and returns its file URL.
-    func download(into directoryURL: URL) async throws -> URL {
-        try ensureDirectoryIfNeeded(directoryURL)
-        let destinationURL = directoryURL.appendingPathComponent(Self.fileName)
-
-        Self.logger.info("downloading mmdb from \(Self.downloadURL.absoluteString, privacy: .public)")
-        var request = URLRequest(url: Self.downloadURL)
-        request.timeoutInterval = 30
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse,
-           !(200...299).contains(http.statusCode) {
+        guard let bundledURL = Bundle.main.url(forResource: resourceName, withExtension: resourceExtension) else {
+            Self.logger.error("bundled \(destinationFileName, privacy: .public) not found in app resources")
             throw NSError(
                 domain: "CountryMMDBStore",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "下载 Country.mmdb 失败，状态码: \(http.statusCode)"]
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "应用资源中缺少 \(destinationFileName)，请确认已加入 Bundle Resources"]
             )
         }
 
-        try data.write(to: destinationURL, options: .atomic)
-        Self.logger.info("mmdb downloaded bytes=\(data.count)")
-        return destinationURL
+        do {
+            try fileManager.copyItem(at: bundledURL, to: destinationURL)
+            Self.logger.info("\(destinationFileName, privacy: .public) copied from bundle")
+            return destinationURL
+        } catch {
+            Self.logger.error("\(destinationFileName, privacy: .public) copy failed: \(error.localizedDescription, privacy: .public)")
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try? fileManager.removeItem(at: destinationURL)
+            }
+            throw error
+        }
     }
 
     private func ensureDirectoryIfNeeded(_ directoryURL: URL) throws {

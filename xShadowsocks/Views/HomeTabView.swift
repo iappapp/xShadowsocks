@@ -56,7 +56,7 @@ struct HomeTabView: View {
     private var mainContent: some View {
         List {
             Section {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Circle()
                         .fill(connectionDotColor)
                         .frame(width: 8, height: 8)
@@ -73,7 +73,9 @@ struct HomeTabView: View {
 
                 Picker("全局路由", selection: $viewModel.routeMode) {
                     ForEach(homeRouteModes) { mode in
-                        Text(mode.rawValue).tag(mode)
+                        Text(mode.rawValue)
+                            .font(.system(size: 18))
+                            .tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
