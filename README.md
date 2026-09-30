@@ -73,6 +73,25 @@ iOS 上的做法一致。
 - 订阅列表、设置项、当日流量计数同理：有 App Group 用共享 defaults，否则用
   `UserDefaults.standard`。见 `AppGroupStore`。
 
+## 只编译、不签名
+
+签名是消耗免费账号 App ID 的唯一动作。改代码时用脚本编译即可，全程不碰
+provisioning profile、不连开发者后台：
+
+```bash
+./build-unsigned.sh          # 全部：App + 单元测试 + 扩展
+./build-unsigned.sh app      # 只编译 App
+./build-unsigned.sh extension # 只编译 Packet Tunnel 扩展
+./build-unsigned.sh all Release
+```
+
+它等价于给 `xcodebuild` 传 `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS=""`。产物是未签名的 `.app`／`.appex`，
+**不能安装到设备**（安装必须走 Xcode 的签名流程）。
+
+扩展之所以在脚本里用 `-target` 而不是 `-scheme`：它不在 App 的构建里，这是不签名也能
+把它整个编译一遍的唯一途径——所以扩展代码不会在迭代中悄悄腐烂。
+
 ## 免费账号：直接运行
 
 免费账号没有通配符 App ID，每个 bundle id 都要占一个专属 App ID，额度是每 7 天 10 个。
