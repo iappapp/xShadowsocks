@@ -1,35 +1,25 @@
 import Foundation
 
-/// Shared path + helpers for the mihomo YAML config file.
+/// Shared path + helpers for the mihomo YAML config files the user imported.
 ///
-/// The active config filename is persisted in `AppGroupStore` so the runtime
-/// (and the browser proxy-port reader) always load the same file the user
-/// selected. Imports write to `<configName>.yaml`; the legacy `default.conf`
-/// is only used as a fallback for existing installs that haven't migrated.
+/// Files live in the App Group working directory (see `MihomoSharedPaths`) because
+/// the packet-tunnel extension is the process that hands them to the core. The
+/// active filename is persisted in `AppGroupStore` so the app, the extension and
+/// the browser proxy-port reader all agree on which file is in use.
+///
+/// Note this is *not* the file the core is started with: the extension derives
+/// `runtime.yaml` from it at start time. See `MihomoRuntimeConfigBuilder`.
 enum MihomoConfigFileStore {
-    enum ProxyKind {
-        case httpConnect
-        case socks5
-    }
-
     /// Filename used for the built-in default template (restore-defaults).
     static let defaultTemplateFileName = "default.yaml"
 
-    /// Legacy filename, kept only as a migration fallback.
-    static let legacyFileName = "default.conf"
-
     private static let store = AppGroupStore.shared
 
-    /// The currently active config filename (persisted). Defaults to the legacy
-    /// `default.conf` only if a migrated active name has not been set yet.
+    /// The currently active config filename (persisted).
     static var activeFileName: String {
         get {
             let saved = store.loadString(forKey: store.activeConfigFileNameKey, default: "")
             if saved.isEmpty {
-                // Migrate: prefer legacy default.conf if it exists on disk.
-                if FileManager.default.fileExists(atPath: fileURL(forFileName: legacyFileName).path) {
-                    return legacyFileName
-                }
                 return defaultTemplateFileName
             }
             return saved
@@ -40,9 +30,7 @@ enum MihomoConfigFileStore {
     }
 
     static var directoryURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        return base.appendingPathComponent("mihomo", isDirectory: true)
+        MihomoSharedPaths.directoryURL
     }
 
     /// URL of the currently active config file.
@@ -110,58 +98,6 @@ enum MihomoConfigFileStore {
 
     static func fileExists(forFileName fileName: String) -> Bool {
         FileManager.default.fileExists(atPath: fileURL(forFileName: fileName).path)
-    }
-
-    /// Reads the actual local proxy endpoint from the active saved YAML.
-    /// `mixed-port` and `port` support HTTP CONNECT; `socks-port` needs SOCKS5.
-    static func readProxyEndpoint(defaultPort: Int = 7890) -> (port: Int, kind: ProxyKind) {
-        guard let text = loadText() else { return (defaultPort, .httpConnect) }
-
-        var mixed: Int?
-        var http: Int?
-        var socks: Int?
-
-        for rawLine in text.components(separatedBy: .newlines) {
-            guard isTopLevelLine(rawLine) else { continue }
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.hasPrefix("#"), let sep = line.firstIndex(of: ":") else { continue }
-            let key = String(line[..<sep]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            var value = String(line[line.index(after: sep)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if (value.hasPrefix("'") && value.hasSuffix("'")) || (value.hasPrefix("\"") && value.hasSuffix("\"")) {
-                value = String(value.dropFirst().dropLast())
-            }
-            guard let port = Int(value) else { continue }
-            switch key {
-            case "mixed-port":
-                mixed = port
-            case "port":
-                http = port
-            case "socks-port":
-                socks = port
-            default:
-                break
-            }
-        }
-
-        if let mixed {
-            return (mixed, .httpConnect)
-        }
-        if let http {
-            return (http, .httpConnect)
-        }
-        if let socks {
-            return (socks, .socks5)
-        }
-        return (defaultPort, .httpConnect)
-    }
-
-    /// Reads mixed-port / port / socks-port from the saved YAML for status UI.
-    static func readProxyPort(default defaultPort: Int = 7890) -> Int {
-        readProxyEndpoint(defaultPort: defaultPort).port
-    }
-
-    private static func isTopLevelLine(_ line: String) -> Bool {
-        !line.hasPrefix(" ") && !line.hasPrefix("\t")
     }
 
     /// Some subscription endpoints return YAML with tabs in indentation or a BOM.

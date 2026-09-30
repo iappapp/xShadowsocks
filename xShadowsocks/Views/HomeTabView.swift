@@ -36,7 +36,7 @@ struct HomeTabView: View {
                 ProxyBrowserView()
                     .navigationBarTitleDisplayMode(.inline)
             }
-            .onChange(of: viewModel.isProxyEnabled) { _, newValue in
+            .onChange(of: viewModel.wantsProxy) { _, newValue in
                 viewModel.setProxyEnabled(newValue)
             }
             .onChange(of: viewModel.routeMode) { _, _ in
@@ -46,11 +46,18 @@ struct HomeTabView: View {
                 guard let newValue else { return }
                 expandedSourceIDs.insert(newValue)
             }
-            .alert("代理操作失败", isPresented: $viewModel.showProxyError) {
+            .alert("代理操作失败", isPresented: proxyErrorBinding) {
                 Button("确定", role: .cancel) {}
             } message: {
-                Text(viewModel.proxyErrorMessage)
+                Text(viewModel.proxyErrorMessage ?? "")
             }
+    }
+
+    private var proxyErrorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.proxyErrorMessage != nil },
+            set: { if !$0 { viewModel.proxyErrorMessage = nil } }
+        )
     }
 
     private var mainContent: some View {
@@ -66,7 +73,7 @@ struct HomeTabView: View {
 
                     Spacer()
 
-                    Toggle("", isOn: $viewModel.isProxyEnabled)
+                    Toggle("", isOn: $viewModel.wantsProxy)
                         .labelsHidden()
                         .disabled(viewModel.isApplyingProxyState || !viewModel.canConnect)
                 }
@@ -263,17 +270,22 @@ struct HomeTabView: View {
     }
 
     private var connectionText: String {
-        if viewModel.isApplyingProxyState {
-            return "连接中"
+        switch viewModel.tunnelState {
+        case .connected: return "已连接"
+        case .connecting: return "连接中"
+        case .disconnecting: return "断开中"
+        case .disconnected: return "未连接"
+        case .failed: return "连接失败"
         }
-        return viewModel.isProxyEnabled ? "已连接" : "未连接"
     }
 
     private var connectionDotColor: Color {
-        if viewModel.isApplyingProxyState {
-            return .orange
+        switch viewModel.tunnelState {
+        case .connected: return .green
+        case .connecting, .disconnecting: return .orange
+        case .disconnected: return .gray
+        case .failed: return .red
         }
-        return viewModel.isProxyEnabled ? .green : .gray
     }
 
     private func nodeBadgeFlag(_ node: ServerNode) -> String {

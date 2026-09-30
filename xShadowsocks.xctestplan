@@ -15,13 +15,6 @@
     {
       "target" : {
         "containerPath" : "container:xShadowsocks.xcodeproj",
-        "identifier" : "042FC7E42F556E1E00904641",
-        "name" : "xShadowsocksUITests"
-      }
-    },
-    {
-      "target" : {
-        "containerPath" : "container:xShadowsocks.xcodeproj",
         "identifier" : "042FC7DA2F556E1E00904641",
         "name" : "xShadowsocksTests"
       }

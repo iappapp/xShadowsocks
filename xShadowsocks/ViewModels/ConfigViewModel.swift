@@ -55,11 +55,9 @@ final class ConfigViewModel: ObservableObject {
                 throw SubscriptionNodeImportError.requiresYAMLConfig
             }
 
-            // Merge parsed proxy nodes into the downloaded YAML, then persist as runtime config.
             let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
             let fileName = MihomoConfigFileStore.fileName(forConfigName: trimmedName)
             try MihomoConfigFileStore.save(mergedYAML, as: fileName)
-            MihomoConfigFileStore.activeFileName = fileName
 
             let source = ConfigSourceModel(
                 name: result.sourceName,
@@ -69,16 +67,27 @@ final class ConfigViewModel: ObservableObject {
                 yamlConfig: mergedYAML,
                 fileName: fileName
             )
-            // Append to the list of configs; if a config with the same filename
-            // already exists (re-import of the same name), replace it in place
-            // instead of wiping the whole list.
+            // Replace an existing source with the same filename (a re-import), keeping
+            // the existing selection so the user does not have to re-pick a config
+            // they already had running.
             if let existingIndex = configSources.firstIndex(where: { $0.fileName == fileName }) {
                 configSources[existingIndex] = source
+                MihomoConfigFileStore.activeFileName = fileName
             } else {
                 configSources.append(source)
+                // Only claim the active slot when the user has not chosen one yet.
+                if store.loadString(forKey: store.activeConfigFileNameKey).isEmpty {
+                    MihomoConfigFileStore.activeFileName = fileName
+                }
             }
             persistSourceState()
             refreshLocalConfigFile()
+
+            // If the tunnel is up and this import replaced the running config, pick the
+            // new file up now instead of leaving the user on the old nodes.
+            if MihomoConfigFileStore.activeFileName == fileName {
+                await ProxyControl.reload()
+            }
 
             return true
         } catch {
@@ -90,6 +99,17 @@ final class ConfigViewModel: ObservableObject {
     func deleteSource(_ source: ConfigSourceModel) {
         guard let index = configSources.firstIndex(where: { $0.id == source.id }) else { return }
         configSources.remove(at: index)
+
+        if let fileName = source.fileName, MihomoConfigFileStore.activeFileName == fileName {
+            // Fall back to another config so the tunnel is never pointed at a file
+            // that no longer exists.
+            let fallback = configSources.first?.fileName ?? MihomoConfigFileStore.defaultTemplateFileName
+            MihomoConfigFileStore.activeFileName = fallback
+        }
+        if let fileName = source.fileName {
+            try? fileManager.removeItem(at: MihomoSharedPaths.configFileURL(forFileName: fileName))
+        }
+
         persistSourceState()
     }
 
@@ -139,22 +159,21 @@ final class ConfigViewModel: ObservableObject {
         try MihomoConfigFileStore.save(contents, as: fileName)
     }
 
+    /// Used when the user has not imported a subscription yet. The tunnel forces
+    /// `tun`/`external-controller`/`ipv6` itself, so nothing tunnel-related belongs here.
     private var defaultTemplate: String {
         """
-        port: 7890
-        socks-port: 7891
-        allow-lan: false
         mode: rule
-        log-level: info
-        external-controller: 127.0.0.1:9090
+        log-level: warning
 
         dns:
           enable: true
-          ipv6: true
+          ipv6: false
           enhanced-mode: fake-ip
+          fake-ip-range: 198.18.0.1/16
           nameserver:
-            - https://1.1.1.1/dns-query
-            - https://8.8.8.8/dns-query
+            - 223.5.5.5
+            - 119.29.29.29
 
         proxies: []
         proxy-groups: []

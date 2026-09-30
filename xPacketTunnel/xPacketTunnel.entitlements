@@ -2,5 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Add the Network Extension entitlement here when moving to a paid account:
+	     <key>com.apple.developer.networking.networkextension</key>
+	     <array><string>packet-tunnel-provider</string></array>
+	     The extension is not built by the default scheme while it cannot be signed. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.github.iappapp.xShadowsocks</string>
+	</array>
 </dict>
 </plist>

@@ -9,42 +9,26 @@ struct SettingsTabView: View {
 
     var body: some View {
         Form {
-            Section("订阅") {
-                TextField("订阅 URL", text: $viewModel.subscriptionURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-
-                Toggle("打开时更新", isOn: $viewModel.updateOnLaunch)
-                Toggle("后台自动更新", isOn: $viewModel.backgroundUpdate)
-
-                Picker("更新间隔", selection: $viewModel.updateInterval) {
-                    ForEach(UpdateInterval.allCases) { interval in
-                        Text(interval.title).tag(interval.rawValue)
+            Section {
+                Picker("代理方式", selection: $viewModel.proxyMode) {
+                    ForEach(ProxyMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
-                .disabled(!viewModel.backgroundUpdate)
+                .pickerStyle(.inline)
+                .disabled(!viewModel.isTunnelAvailable)
 
-                if viewModel.lastUpdateTimestamp > 0 {
-                    LabeledContent(
-                        "上次更新",
-                        value: Date(timeIntervalSince1970: viewModel.lastUpdateTimestamp)
-                            .formatted(date: .abbreviated, time: .shortened)
-                    )
-                }
+                Text(viewModel.proxyMode.detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
 
-                Button {
-                    viewModel.updateSubscriptionNow()
-                } label: {
-                    HStack {
-                        Text("立即更新订阅")
-                        Spacer()
-                        if viewModel.isUpdatingSubscription {
-                            ProgressView()
-                        }
-                    }
+                if !viewModel.isTunnelAvailable {
+                    Text("系统 VPN 需要付费开发者账号签名扩展，当前构建未包含隧道扩展。")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
                 }
-                .disabled(!viewModel.canUpdateSubscription)
+            } header: {
+                Text("代理方式")
             }
 
             Section("网络") {
@@ -53,15 +37,19 @@ struct SettingsTabView: View {
                 Toggle("优先 IPv6", isOn: $viewModel.preferIPv6)
             }
 
-            Section("全局路由") {
+            Section {
                 Picker("模式", selection: $viewModel.routeMode) {
                     ForEach(RouteMode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
+            } header: {
+                Text("全局路由")
+            } footer: {
+                Text("路由模式由配置文件中的规则决定，此处设置会写入运行配置。")
             }
 
-            Section("代理端口") {
+            Section("本地端口") {
                 HStack {
                     Text("端口")
                     TextField("7890", text: $viewModel.proxyPortText)
@@ -75,11 +63,23 @@ struct SettingsTabView: View {
                 }
             }
 
-            Section("数据管理") {
-                Button("清除保存的节点配置") {
-                    viewModel.clearSavedNodeConfig()
+            Section {
+                Toggle("启动时更新订阅", isOn: $viewModel.updateOnLaunch)
+                Picker("更新间隔", selection: $viewModel.updateInterval) {
+                    ForEach(UpdateInterval.allCases) { interval in
+                        Text(interval.title).tag(interval.rawValue)
+                    }
                 }
+                .disabled(!viewModel.updateOnLaunch)
 
+                Text("订阅更新尚未接入后台任务，需在“配置”页手动重新导入。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("订阅")
+            }
+
+            Section("数据管理") {
                 Button("恢复默认设置", role: .destructive) {
                     viewModel.showResetAlert = true
                 }
@@ -88,24 +88,33 @@ struct SettingsTabView: View {
             if let updateMessage = viewModel.updateMessage {
                 Section("状态") {
                     Text(updateMessage)
-                        .foregroundStyle(updateMessage.contains("成功") ? .green : .red)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .onAppear {
             viewModel.onAppear()
         }
-        .onChange(of: viewModel.subscriptionURL) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.updateOnLaunch) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.backgroundUpdate) { _, _ in viewModel.persist() }
         .onChange(of: viewModel.updateInterval) { _, _ in viewModel.persist() }
+        .onChange(of: viewModel.updateOnLaunch) { _, _ in viewModel.persist() }
         .onChange(of: viewModel.allowCellular) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.allowLANAccess) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.preferIPv6) { _, _ in viewModel.persist() }
-        .onChange(of: viewModel.routeMode) { _, _ in viewModel.persist() }
+        .onChange(of: viewModel.proxyMode) { _, _ in viewModel.persist() }
+        .onChange(of: viewModel.allowLANAccess) { _, _ in
+            viewModel.persist()
+            Task { await ProxyControl.reload() }
+        }
+        .onChange(of: viewModel.preferIPv6) { _, _ in
+            viewModel.persist()
+            Task { await ProxyControl.reload() }
+        }
+        .onChange(of: viewModel.routeMode) { _, _ in
+            viewModel.persist()
+            Task { await ProxyControl.reload() }
+        }
         .onChange(of: viewModel.proxyPortText) { _, newValue in
             viewModel.handleProxyPortInputChange(newValue)
             viewModel.persist()
+            Task { await ProxyControl.reload() }
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
@@ -115,7 +124,7 @@ struct SettingsTabView: View {
                 viewModel.resetSettings()
             }
         } message: {
-            Text("这将清除订阅与网络设置，并恢复默认值。")
+            Text("这将恢复网络与端口设置到默认值。")
         }
     }
 }

@@ -15,6 +15,13 @@ struct DataTabView: View {
                 LabeledContent("总计", value: "\(viewModel.totalToday.formatted(.number.precision(.fractionLength(1)))) MB")
             }
 
+            if viewModel.isConnected {
+                Section("本次连接") {
+                    LabeledContent("上传", value: "\(viewModel.liveUpload.formatted(.number.precision(.fractionLength(1)))) MB")
+                    LabeledContent("下载", value: "\(viewModel.liveDownload.formatted(.number.precision(.fractionLength(1)))) MB")
+                }
+            }
+
             Section {
                 Button("重置统计") {
                     viewModel.reset()

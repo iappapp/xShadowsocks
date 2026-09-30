@@ -2,18 +2,25 @@ import SwiftUI
 
 #if !targetEnvironment(simulator)
 import WebKit
-import Network
 #endif
 
-// MARK: - Proxy Browser View
+// MARK: - Proxy browser
 
+/// A web view used to sanity-check local proxy mode.
+///
+/// In loopback mode the core listens on this device, so the web view is pointed at that
+/// port through `WKWebsiteDataStore.proxyConfigurations` — no URL rewriting or JS
+/// patching, and the traffic demonstrably goes through mihomo. In tunnel mode the
+/// default route already carries this app's traffic, so no proxy configuration is
+/// needed (and pointing at the port would be wrong: that listener belongs to the
+/// extension process).
 struct ProxyBrowserView: View {
     #if targetEnvironment(simulator)
     var body: some View {
         ContentUnavailableView(
             "浏览器在模拟器中不可用",
             systemImage: "safari",
-            description: Text("请在真机上使用内置浏览器")
+            description: Text("请在真机上使用")
         )
         .navigationTitle("内置浏览器")
         .navigationBarTitleDisplayMode(.inline)
@@ -22,13 +29,11 @@ struct ProxyBrowserView: View {
     @State private var urlString: String = "https://www.google.com"
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
-    @State private var loadTrigger = UUID()
-    @State private var proxyEndpoint = ProxyBrowserView.loadConfiguredProxyEndpoint()
-    let proxyHost: String = "127.0.0.1"
+    @State private var loadToken = UUID()
+    @State private var proxyEndpoint: LocalProxyEndpoint = .direct
 
     var body: some View {
         VStack(spacing: 0) {
-            // Address Bar
             HStack {
                 TextField("URL", text: $urlString)
                     .textFieldStyle(.roundedBorder)
@@ -43,23 +48,23 @@ struct ProxyBrowserView: View {
             }
             .padding()
 
-            // Content Area
             ZStack {
                 ProxyWebView(
                     urlString: $urlString,
                     isLoading: $isLoading,
                     errorMessage: $errorMessage,
-                    loadTrigger: loadTrigger,
-                    proxyHost: proxyHost,
-                    proxyPort: proxyEndpoint.port,
-                    proxyKind: proxyEndpoint.kind
+                    loadToken: loadToken,
+                    proxyEndpoint: proxyEndpoint
                 )
+                // The proxy is a property of the web view's data store, so switching
+                // modes rebuilds the view rather than reusing it.
+                .id(proxyEndpoint)
                 .edgesIgnoringSafeArea(.bottom)
 
                 if let error = errorMessage, !isLoading {
                     Color(.systemBackground)
                     ContentUnavailableView(
-                        "Connection Failed",
+                        "加载失败",
                         systemImage: "exclamationmark.triangle",
                         description: Text(error)
                     )
@@ -76,125 +81,118 @@ struct ProxyBrowserView: View {
                     }
                 }
             }
+
+            Text(proxyEndpoint.description)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
         }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            proxyEndpoint = Self.loadConfiguredProxyEndpoint()
+            proxyEndpoint = LocalProxyEndpoint.current()
         }
-    }
-
-    private static func loadConfiguredProxyEndpoint() -> (port: Int, kind: MihomoConfigFileStore.ProxyKind) {
-        // Prefer the port from saved mihomo config (actual listener), then settings.
-        let fromConfig = MihomoConfigFileStore.readProxyEndpoint(defaultPort: 0)
-        if fromConfig.port > 0 {
-            return fromConfig
-        }
-        let rawValue = AppGroupStore.shared.loadInt(forKey: AppGroupStore.shared.proxyPortKey, default: 7890)
-        return (min(max(rawValue, 2000), 9000), .httpConnect)
     }
 
     private func go() {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let lowered = trimmed.lowercased()
         if !lowered.hasPrefix("http://") && !lowered.hasPrefix("https://") {
-            if trimmed.contains(".") && !trimmed.contains(" ") {
-                urlString = "https://\(trimmed)"
-            } else {
-                errorMessage = "Invalid URL"
+            guard trimmed.contains("."), !trimmed.contains(" ") else {
+                errorMessage = "无效的网址"
                 return
             }
-        } else {
-            urlString = trimmed
+            trimmed = "https://\(trimmed)"
         }
 
+        urlString = trimmed
         errorMessage = nil
-        loadTrigger = UUID()
+        // Bumping the token is what actually triggers the load in the representable.
+        loadToken = UUID()
     }
     #endif
 }
 
-// MARK: - WKWebView with Native Proxy Configuration (iOS 17+)
+/// Where the in-app browser should send its traffic.
+enum LocalProxyEndpoint: Hashable {
+    /// No proxy configuration: the system routes the request, through the tunnel when
+    /// one is active.
+    case direct
+    /// Talk to the core running in this process.
+    case httpConnect(host: String, port: Int)
+
+    @MainActor
+    static func current() -> LocalProxyEndpoint {
+        guard LocalProxyHost.shared.isRunning else { return .direct }
+        return .httpConnect(host: "127.0.0.1", port: LocalProxyHost.shared.proxyPort)
+    }
+
+    var description: String {
+        switch self {
+        case .direct:
+            return "未启用本地代理，流量由系统路由"
+        case .httpConnect(let host, let port):
+            return "经本地代理 \(host):\(port)"
+        }
+    }
+}
 
 #if !targetEnvironment(simulator)
-/// Uses `WKWebsiteDataStore.proxyConfigurations` to route all WKWebView
-/// traffic through a local HTTP CONNECT proxy — no URL rewriting,
-/// no custom scheme handlers, no JS monkey-patching needed.
 struct ProxyWebView: UIViewRepresentable {
     @Binding var urlString: String
     @Binding var isLoading: Bool
     @Binding var errorMessage: String?
-    let loadTrigger: UUID
-    let proxyHost: String
-    let proxyPort: Int
-    let proxyKind: MihomoConfigFileStore.ProxyKind
+
+    let loadToken: UUID
+    let proxyEndpoint: LocalProxyEndpoint
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var parent: ProxyWebView
-        var lastTrigger: UUID?
+        var lastLoadedToken: UUID?
 
         init(_ parent: ProxyWebView) {
             self.parent = parent
         }
 
-        // MARK: - WKNavigationDelegate
-
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            DispatchQueue.main.async {
-                self.parent.isLoading = true
-                self.parent.errorMessage = nil
-            }
+            parent.isLoading = true
+            parent.errorMessage = nil
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
             if let url = webView.url?.absoluteString {
-                DispatchQueue.main.async {
-                    self.parent.urlString = url
-                }
+                parent.urlString = url
             }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            DispatchQueue.main.async {
-                self.parent.isLoading = false
-                self.parent.errorMessage = nil
-            }
+            parent.isLoading = false
+            parent.errorMessage = nil
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            let nsError = error as NSError
-            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
-            DispatchQueue.main.async {
-                self.parent.isLoading = false
-                self.parent.errorMessage = error.localizedDescription
-            }
+            report(error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            let nsError = error as NSError
-            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
-            DispatchQueue.main.async {
-                self.parent.isLoading = false
-                self.parent.errorMessage = error.localizedDescription
-            }
+            report(error)
         }
 
-        func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        func webView(
+            _ webView: WKWebView,
+            didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!
+        ) {
             if let url = webView.url?.absoluteString {
-                DispatchQueue.main.async {
-                    self.parent.urlString = url
-                }
+                parent.urlString = url
             }
         }
 
-        // MARK: - WKUIDelegate
-
-        // Handle target="_blank" links
+        // Open target="_blank" links in the same web view.
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
@@ -206,59 +204,57 @@ struct ProxyWebView: UIViewRepresentable {
             }
             return nil
         }
+
+        private func report(_ error: Error) {
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
+            parent.isLoading = false
+            parent.errorMessage = error.localizedDescription
+        }
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        // Set up HTTP CONNECT proxy via native API
-        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(proxyPort)) else {
-            context.coordinator.parent.errorMessage = "代理端口无效：\(proxyPort)"
-            return WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        }
-
-        let proxyEndpoint = NWEndpoint.hostPort(
-            host: NWEndpoint.Host(proxyHost),
-            port: nwPort
-        )
-        let proxyConfig: ProxyConfiguration
-        switch proxyKind {
-        case .httpConnect:
-            proxyConfig = ProxyConfiguration(httpCONNECTProxy: proxyEndpoint)
-        case .socks5:
-            proxyConfig = ProxyConfiguration(socksv5Proxy: proxyEndpoint)
-        }
-
-        let dataStore = WKWebsiteDataStore.nonPersistent()
-        dataStore.proxyConfigurations = [proxyConfig]
-
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = dataStore
-        config.allowsInlineMediaPlayback = true
-
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: .zero, configuration: makeConfiguration())
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
 
-        // Initial load
-        if let url = URL(string: context.coordinator.parent.urlString) {
-            context.coordinator.lastTrigger = loadTrigger
+        context.coordinator.lastLoadedToken = loadToken
+        if let url = URL(string: urlString) {
             webView.load(URLRequest(url: url))
         }
-
         return webView
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
         context.coordinator.parent = self
-
-        // Only load on explicit Go trigger
-        if context.coordinator.lastTrigger != loadTrigger {
-            context.coordinator.lastTrigger = loadTrigger
-            if let url = URL(string: urlString) {
-                uiView.load(URLRequest(url: url))
-            }
+        guard context.coordinator.lastLoadedToken != loadToken else { return }
+        context.coordinator.lastLoadedToken = loadToken
+        if let url = URL(string: urlString) {
+            uiView.load(URLRequest(url: url))
         }
+    }
+
+    /// The data store is rebuilt per web view because `proxyConfigurations` is a
+    /// property of the data store, not of a request — the proxy cannot be swapped on an
+    /// existing view. `updateUIView` therefore compares the endpoint and lets SwiftUI
+    /// recreate the view when it changes (the endpoint is part of the view's identity
+    /// through `id`).
+    private func makeConfiguration() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+
+        let dataStore = WKWebsiteDataStore.nonPersistent()
+        if case .httpConnect(let host, let port) = proxyEndpoint,
+           let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) {
+            dataStore.proxyConfigurations = [
+                ProxyConfiguration(
+                    httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(host), port: nwPort)
+                )
+            ]
+        }
+        configuration.websiteDataStore = dataStore
+        return configuration
     }
 }
 #endif
-

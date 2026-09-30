@@ -1,12 +1,14 @@
 import Foundation
+import NetworkExtension
+import os
 
 @MainActor
 final class HomeViewModel: ObservableObject {
-    @Published var isProxyEnabled = false
-    @Published var isApplyingProxyState = false
-    @Published var showProxyError = false
-    @Published var proxyErrorMessage = ""
-    @Published var proxyStatusText = "未启动"
+    /// User intent, bound to the toggle.
+    @Published var wantsProxy: Bool = false
+    /// Actual running state, never written optimistically.
+    @Published private(set) var tunnelState: TunnelState = .disconnected
+    @Published var proxyErrorMessage: String?
     @Published var routeMode: RouteMode = .configuration
     @Published var isTesting = false
     @Published var configSources: [ConfigSourceModel] = []
@@ -14,39 +16,55 @@ final class HomeViewModel: ObservableObject {
     @Published var nodes: [ServerNode] = []
     @Published var selectedNodeID: UUID?
 
+    private let logger = Logger(subsystem: "com.github.iappapp.xShadowsocks", category: "HomeViewModel")
     private let configSourcesKey = "config_sources"
     private let isPreviewMode: Bool
     private let store = AppGroupStore.shared
-    private var runtimeService: MihomoProxyRuntimeService?
-    private var localProxyPort: UInt16 = 7890
-    private var isProxyRunning = false
-    private var isSyncingProxyState = false
+    private var statusObserver: NSObjectProtocol?
+    private var isApplying = false
+
+    enum TunnelState: Equatable {
+        case disconnected
+        case connecting
+        case connected
+        case disconnecting
+        case failed(String)
+    }
 
     init(isPreviewMode: Bool = false) {
         self.isPreviewMode = isPreviewMode
-
         guard !isPreviewMode else { return }
-
-        localProxyPort = Self.loadProxyPort(from: store)
-
-        let workingDirectoryURL: URL
-        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            workingDirectoryURL = appSupport.appendingPathComponent("mihomo", isDirectory: true)
-        } else {
-            workingDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-                .appendingPathComponent("mihomo", isDirectory: true)
-        }
-
-        let runtimeManager = MihomoRuntimeManager(
-            bridge: DynamicMihomoCoreBridge(),
-            workingDirectoryURL: workingDirectoryURL
-        )
-        let service = MihomoProxyRuntimeService(runtimeManager: runtimeManager)
-        service.onStateChange = { [weak self] state in
-            self?.handleRuntimeState(state)
-        }
-        self.runtimeService = service
+        observeTunnelStatus()
+        Task { await refreshTunnelState() }
     }
+
+    deinit {
+        if let statusObserver {
+            NotificationCenter.default.removeObserver(statusObserver)
+        }
+    }
+
+    // MARK: - Mode
+
+    /// Which host the core runs in. The tunnel is only usable when the app was signed
+    /// with the Network Extension entitlement *and* the extension is embedded; both
+    /// require a paid account, so on a free account the app stays on loopback.
+    var isTunnelAvailable: Bool { TunnelManager.isExtensionEmbedded }
+
+    /// Persisted preference; forced to loopback when the tunnel cannot run.
+    var proxyMode: ProxyMode {
+        get {
+            guard isTunnelAvailable else { return .loopback }
+            let raw = store.loadString(forKey: store.proxyModeKey, default: ProxyMode.loopback.rawValue)
+            return ProxyMode(rawValue: raw) ?? .loopback
+        }
+        set {
+            store.saveValue(newValue.rawValue, forKey: store.proxyModeKey)
+            objectWillChange.send()
+        }
+    }
+
+    // MARK: - Derived state
 
     var selectedNode: ServerNode? {
         nodes.first { $0.id == selectedNodeID }
@@ -56,19 +74,44 @@ final class HomeViewModel: ObservableObject {
         configSources.first { $0.id == selectedSourceID }
     }
 
-    /// Whether the user is allowed to start the proxy. Requires at least one
-    /// imported config; when more than one config exists the user must pick one
-    /// first (a single config is auto-selected and usable without a tap).
+    var activeConfigFileName: String? {
+        guard let source = selectedSource ?? configSources.first else { return nil }
+        return source.fileName ?? MihomoConfigFileStore.fileName(forConfigName: source.name)
+    }
+
+    /// Whether the user is allowed to start the proxy. Requires at least one imported
+    /// config; with more than one the user must pick one first.
     var canConnect: Bool {
         !configSources.isEmpty && (configSources.count == 1 || selectedSourceID != nil)
     }
+
+    var isApplyingProxyState: Bool {
+        isApplying || tunnelState == .connecting || tunnelState == .disconnecting
+    }
+
+    var proxyStatusText: String {
+        switch tunnelState {
+        case .connected:
+            return proxyMode == .tunnel ? "已连接（系统 VPN）" : "已连接（本地 \(LocalProxyHost.shared.proxyPort)）"
+        case .connecting:
+            return "连接中"
+        case .disconnecting:
+            return "断开中"
+        case .disconnected:
+            return "未连接"
+        case .failed(let message):
+            return "连接失败：\(message)"
+        }
+    }
+
+    // MARK: - Lifecycle
 
     func onAppear() {
         guard !isPreviewMode else { return }
         loadConfigSourcesFromStore()
         ensureSelectedSourceAndNode()
         routeMode = loadRouteModeFromSettings()
-        syncPortFromSettings()
+        Task { await refreshTunnelState() }
     }
 
     func persistRouteMode() {
@@ -92,6 +135,196 @@ final class HomeViewModel: ObservableObject {
         source.nodes
     }
 
+    // MARK: - Connect / disconnect
+
+    /// Called when the user flips the toggle. `apply(status:)` also writes `wantsProxy`,
+    /// so this reconciles rather than acting unconditionally — otherwise a status
+    /// notification could restart a session that is already up.
+    func setProxyEnabled(_ enabled: Bool) {
+        guard !isApplying else { return }
+        wantsProxy = enabled
+        Task { await applyProxyIntent() }
+    }
+
+    private func applyProxyIntent() async {
+        guard !isPreviewMode else { return }
+        guard !isApplying else { return }
+
+        // Already where the user wants to be — nothing to do.
+        if wantsProxy, tunnelState == .connected || tunnelState == .connecting { return }
+        if !wantsProxy, tunnelState == .disconnected || tunnelState == .disconnecting { return }
+
+        isApplying = true
+        defer { isApplying = false }
+
+        if wantsProxy {
+            await start()
+        } else {
+            await stop()
+        }
+    }
+
+    private func start() async {
+        guard let fileName = activeConfigFileName else {
+            wantsProxy = false
+            proxyErrorMessage = "请先选择一个配置"
+            return
+        }
+        guard MihomoSharedPaths.ensureDirectory() else {
+            wantsProxy = false
+            proxyErrorMessage = "无法创建运行目录"
+            return
+        }
+
+        // The source list can be newer than what is on disk (e.g. right after an
+        // import), so re-write the selected file before starting.
+        if let source = selectedSource ?? configSources.first, let yaml = source.yamlConfig {
+            try? MihomoConfigFileStore.save(yaml, as: fileName)
+        }
+        MihomoConfigFileStore.activeFileName = fileName
+
+        let userYAML = MihomoConfigFileStore.loadText(forFileName: fileName) ?? ""
+
+        switch proxyMode {
+        case .loopback:
+            tunnelState = .connecting
+            do {
+                try LocalProxyHost.shared.start(userYAML: userYAML)
+                tunnelState = .connected
+            } catch {
+                tunnelState = .failed(error.localizedDescription)
+                wantsProxy = false
+                proxyErrorMessage = error.localizedDescription
+            }
+
+        case .tunnel:
+            do {
+                try await TunnelManager.shared.start(activeConfigFileName: fileName)
+                // The real state arrives through `NEVPNStatusDidChange`.
+                tunnelState = .connecting
+            } catch {
+                tunnelState = .failed(error.localizedDescription)
+                wantsProxy = false
+                proxyErrorMessage = "系统 VPN 启动失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func stop() async {
+        switch proxyMode {
+        case .loopback:
+            tunnelState = .disconnecting
+            LocalProxyHost.shared.stop()
+            tunnelState = .disconnected
+
+        case .tunnel:
+            tunnelState = .disconnecting
+            do {
+                try await TunnelManager.shared.stop()
+            } catch {
+                proxyErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshTunnelState() async {
+        guard !isPreviewMode else { return }
+
+        switch proxyMode {
+        case .loopback:
+            // The app owns the core, so its own flag is the truth.
+            tunnelState = LocalProxyHost.shared.isRunning ? .connected : .disconnected
+            wantsProxy = LocalProxyHost.shared.isRunning
+
+        case .tunnel:
+            guard let manager = await TunnelManager.shared.existingManager() else {
+                tunnelState = .disconnected
+                return
+            }
+            apply(status: manager.connection.status)
+        }
+    }
+
+    private func observeTunnelStatus() {
+        statusObserver = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let connection = notification.object as? NEVPNConnection else { return }
+            Task { @MainActor in
+                guard let self, self.proxyMode == .tunnel else { return }
+                self.apply(status: connection.status)
+            }
+        }
+    }
+
+    private func apply(status: NEVPNStatus) {
+        switch status {
+        case .connected:
+            tunnelState = .connected
+            wantsProxy = true
+        case .connecting, .reasserting:
+            tunnelState = .connecting
+        case .disconnecting:
+            tunnelState = .disconnecting
+        case .disconnected, .invalid:
+            tunnelState = .disconnected
+            wantsProxy = false
+        @unknown default:
+            tunnelState = .disconnected
+        }
+    }
+
+    // MARK: - Connectivity test
+
+    /// Measures TCP reachability of each node's own endpoint.
+    ///
+    /// This is a plain TCP handshake from the device, so it is only meaningful as a
+    /// pre-flight check; routing latency should come from the core's own
+    /// `/proxies/{name}/delay` endpoint instead. The concurrency is capped because a
+    /// subscription can carry hundreds of nodes.
+    func runConnectivityTest() {
+        guard !isTesting else { return }
+        isTesting = true
+
+        Task {
+            let currentNodes = nodes
+            let limit = 8
+            var latencyMap: [UUID: Int] = [:]
+
+            await withTaskGroup(of: (UUID, Int).self) { group in
+                var index = 0
+                func addNext() {
+                    guard index < currentNodes.count else { return }
+                    let node = currentNodes[index]
+                    index += 1
+                    group.addTask {
+                        let latency = await NodeLatencyProbe.measure(host: node.host, port: node.port)
+                        return (node.id, latency)
+                    }
+                }
+
+                for _ in 0..<min(limit, currentNodes.count) { addNext() }
+
+                while let (id, latency) = await group.next() {
+                    latencyMap[id] = latency
+                    addNext()
+                }
+            }
+
+            nodes = currentNodes.map { node in
+                var updated = node
+                updated.latency = latencyMap[node.id] ?? -1
+                return updated
+            }
+            syncSelectedSourceNodes(with: nodes)
+            isTesting = false
+        }
+    }
+
+    // MARK: - Source / node mutation
+
     func deleteSource(_ source: ConfigSourceModel) {
         guard let sourceIndex = configSources.firstIndex(where: { $0.id == source.id }) else {
             return
@@ -114,6 +347,9 @@ final class HomeViewModel: ObservableObject {
             selectedNodeID = nil
         }
 
+        if let fileName = source.fileName {
+            try? FileManager.default.removeItem(at: MihomoSharedPaths.configFileURL(forFileName: fileName))
+        }
         persistSourceState()
     }
 
@@ -138,170 +374,13 @@ final class HomeViewModel: ObservableObject {
         persistSourceState()
     }
 
-    func runConnectivityTest() {
-        guard !isTesting else { return }
-        isTesting = true
-
-        Task {
-            let currentNodes = nodes
-
-            let latencyMap = await withTaskGroup(of: (UUID, Int).self) { group in
-                for node in currentNodes {
-                    group.addTask {
-                        let latency = await NodeLatencyProbe.measure(host: node.host, port: node.port)
-                        return (node.id, latency)
-                    }
-                }
-
-                var result: [UUID: Int] = [:]
-                for await (id, latency) in group {
-                    result[id] = latency
-                }
-                return result
-            }
-
-            nodes = currentNodes.map { node in
-                var updated = node
-                updated.latency = latencyMap[node.id] ?? -1
-                return updated
-            }
-            syncSelectedSourceNodes(with: nodes)
-            isTesting = false
-        }
-    }
-
-    func setProxyEnabled(_ enabled: Bool) {
-        guard !isSyncingProxyState else { return }
-        guard !isApplyingProxyState else { return }
-
-        if enabled {
-            // Refuse to start without a usable config: with multiple configs the
-            // user must select one so the right YAML is loaded by mihomo.
-            guard canConnect else {
-                proxyErrorMessage = "请先选择一个配置"
-                showProxyError = true
-                isSyncingProxyState = true
-                isProxyEnabled = false
-                isSyncingProxyState = false
-                return
-            }
-            routeMode = loadRouteModeFromSettings()
-            syncPortFromSettings()
-            // Re-activate the selected config file before starting the proxy so that
-            // the runtime loads the user's current selection (each source has its own file).
-            // For a single unselected config, fall back to that sole source.
-            let activeSource = selectedSource ?? configSources.first
-            if let source = activeSource, let yaml = source.yamlConfig {
-                let fileName = source.fileName ?? MihomoConfigFileStore.fileName(forConfigName: source.name)
-                try? MihomoConfigFileStore.save(yaml, as: fileName)
-                MihomoConfigFileStore.activeFileName = fileName
-            }
-        }
-
-        isApplyingProxyState = true
-        Task {
-            defer { isApplyingProxyState = false }
-
-            do {
-                try await applyProxyEnabled(enabled)
-
-                try? await Task.sleep(for: .milliseconds(250))
-                isSyncingProxyState = true
-                isProxyEnabled = enabled
-                isSyncingProxyState = false
-            } catch {
-                proxyErrorMessage = error.localizedDescription
-                showProxyError = true
-                isSyncingProxyState = true
-                isProxyEnabled = !enabled
-                isSyncingProxyState = false
-            }
-        }
-    }
-
-    private func applyProxyEnabled(_ enabled: Bool) async throws {
-        guard let runtimeService else { return }
-
-        let request = ProxyRuntimeRequest(
-            nodes: nodes,
-            selectedNode: selectedNode,
-            selectedNodeID: selectedNodeID,
-            routeMode: mapRouteMode(routeMode),
-            localProxyPort: localProxyPort
-        )
-
-        if enabled {
-            if isProxyRunning {
-                try await runtimeService.refreshConfig(with: request)
-            } else {
-                try await runtimeService.start(with: request)
-            }
-            isProxyRunning = true
-        } else {
-            try await runtimeService.stop()
-            isProxyRunning = false
-        }
-    }
-
-    private func syncPortFromSettings() {
-        let latestPort = Self.loadProxyPort(from: store)
-        guard latestPort != localProxyPort else { return }
-        guard !isProxyEnabled else { return }
-        localProxyPort = latestPort
-    }
-
-    private func handleRuntimeState(_ state: ProxyRuntimeState) {
-        switch state {
-        case .stopped:
-            proxyStatusText = "未启动"
-        case .starting:
-            proxyStatusText = "启动中"
-        case .running(let statusDetail):
-            proxyStatusText = "运行中(\(statusDetail))"
-        case .failed(let message):
-            proxyStatusText = "启动失败"
-            proxyErrorMessage = message
-            showProxyError = true
-            isSyncingProxyState = true
-            isProxyEnabled = false
-            isSyncingProxyState = false
-        }
-    }
-
-    private func mapRouteMode(_ routeMode: RouteMode) -> MihomoRouteMode {
-        switch routeMode {
-        case .configuration, .scenario:
-            return .configuration
-        case .proxy:
-            return .proxy
-        case .direct:
-            return .direct
-        }
-    }
-
-    private static func loadProxyPort(from store: AppGroupStore) -> UInt16 {
-        let rawValue = store.loadInt(forKey: store.proxyPortKey, default: 7890)
-        let clamped = min(max(rawValue, 2000), 9000)
-        return UInt16(clamped)
-    }
-
     // MARK: - Loading
 
     private func loadConfigSourcesFromStore() {
-        // The subscription URL is owned by the saved ConfigSourceModel (set at
-        // import time). Never synthesize a placeholder URL here — if there is
-        // no saved source, show nothing.
-        if let saved = store.load([ConfigSourceModel].self, forKey: configSourcesKey), !saved.isEmpty {
-            configSources = saved
-            return
-        }
-        configSources = []
+        configSources = store.load([ConfigSourceModel].self, forKey: configSourcesKey) ?? []
     }
 
     private func ensureSelectedSourceAndNode() {
-        // Only auto-select when there is a single config (no ambiguity). With
-        // multiple configs the user must explicitly pick one before connecting;
-        // see `canConnect`.
         if selectedSourceID == nil, configSources.count == 1 {
             selectedSourceID = configSources.first?.id
         }
@@ -360,8 +439,8 @@ extension HomeViewModel {
         viewModel.nodes = hkNodes
         viewModel.selectedNodeID = viewModel.nodes.first?.id
         viewModel.routeMode = .proxy
-        viewModel.isProxyEnabled = true
-        viewModel.proxyStatusText = "运行中 (Mixed 7890)"
+        viewModel.wantsProxy = true
+        viewModel.tunnelState = .connected
         return viewModel
     }
 }
