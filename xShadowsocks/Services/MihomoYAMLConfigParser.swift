@@ -1,12 +1,12 @@
 import Foundation
 
-// MARK: - Parser B: Full mihomo / Clash YAML config file
+// MARK: - Parser B: full mihomo / Clash YAML config file
 //
 // Input  : the raw YAML text of a complete mihomo configuration file
-// Output : every proxy entry under the `proxies:` key as a ServerNode
+// Output : every entry under the top-level `proxies:` key as a ServerNode
 //
-// The caller is also expected to persist the raw YAML as the local
-// config file (default.conf) so mihomo can use it directly.
+// The nodes are for display only — the caller persists the raw YAML verbatim and the
+// core reads that file, so a field this parser does not know about still works.
 //
 // Supports both block-scalar and inline-object proxy entries:
 //
@@ -21,240 +21,246 @@ import Foundation
 
 enum MihomoYAMLConfigParser {
     static func parseProxies(from yamlText: String) -> [ServerNode] {
-        let lines = yamlText.components(separatedBy: .newlines)
+        let nodes = proxyEntries(in: yamlText).compactMap { ProxyFields($0).node }
+        return deduplicate(nodes)
+    }
 
-        var inProxiesSection = false
-        var currentFields: [String: String] = [:]
-        var parsedNodes: [ServerNode] = []
+    // MARK: - Section scanning
 
-        func flushCurrentNode() {
-            guard !currentFields.isEmpty else { return }
-            defer { currentFields.removeAll(keepingCapacity: true) }
+    /// The field map of every proxy entry, in document order.
+    private static func proxyEntries(in yamlText: String) -> [[String: String]] {
+        let document = yamlText.trimmed
 
-            let name     = currentFields["name"]?.trimmed     ?? ""
-            let host     = currentFields["server"]?.trimmed   ?? ""
-            let port     = Int(currentFields["port"] ?? "")   ?? 443
-            let password = currentFields["password"]?.trimmed
-                ?? currentFields["uuid"]?.trimmed
-                ?? currentFields["auth"]?.trimmed
-                ?? currentFields["auth-str"]?.trimmed
-                ?? currentFields["private-key"]?.trimmed
-                ?? ""
-            let type     = currentFields["type"]?.trimmed     ?? "shadowsocks"
-            let method   = currentFields["cipher"]?.trimmed ?? currentFields["method"]?.trimmed
-            let sni      = currentFields["sni"]?.trimmed
-                ?? currentFields["servername"]?.trimmed
-                ?? currentFields["server-name"]?.trimmed
-            let flow     = currentFields["flow"]?.trimmed
-            let encryption = currentFields["encryption"]?.trimmed ?? method
-            let tls = parseBool(currentFields["tls"])
-            let skipCertVerify = parseBool(currentFields["skip-cert-verify"])
-            let network = currentFields["network"]?.trimmed
-            let publicKey = currentFields["reality-opts.public-key"]?.trimmed
-                ?? currentFields["reality-opts.publickey"]?.trimmed
-                ?? currentFields["pbk"]?.trimmed
-            let shortId = currentFields["reality-opts.short-id"]?.trimmed
-                ?? currentFields["reality-opts.shortid"]?.trimmed
-                ?? currentFields["sid"]?.trimmed
-            let serviceName = currentFields["grpc-opts.grpc-service-name"]?.trimmed
-                ?? currentFields["ws-opts.path"]?.trimmed
-                ?? currentFields["path"]?.trimmed
-                ?? currentFields["servicename"]?.trimmed
-            let clientFingerprint = currentFields["client-fingerprint"]?.trimmed
-                ?? currentFields["fingerprint"]?.trimmed
-                ?? currentFields["fp"]?.trimmed
-
-            // Display-only: name + server are enough; secret fields vary by protocol.
-            guard !name.isEmpty, !host.isEmpty else { return }
-
-            parsedNodes.append(
-                ServerNode(
-                    name: name,
-                    host: host,
-                    port: port,
-                    password: password,
-                    nodeType: type,
-                    method: method,
-                    sni: sni,
-                    latency: nil,
-                    flow: flow,
-                    encryption: encryption,
-                    tls: tls,
-                    skipCertVerify: skipCertVerify,
-                    network: network,
-                    publicKey: publicKey,
-                    shortId: shortId,
-                    serviceName: serviceName,
-                    clientFingerprint: clientFingerprint
-                )
-            )
+        // Some endpoints hand back a single proxy instead of a config file.
+        if let inlineObject = inlineObject(of: document) {
+            return [parseInlineObject(inlineObject)]
         }
 
-        let trimmedYAML = yamlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedYAML.hasPrefix("{"), trimmedYAML.hasSuffix("}") {
-            currentFields = parseInlineObject(trimmedYAML)
-            flushCurrentNode()
-            return deduplicate(parsedNodes)
-        }
-        if trimmedYAML.hasPrefix("-") {
-            let item = trimmedYAML.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
-            if item.hasPrefix("{"), item.hasSuffix("}") {
-                currentFields = parseInlineObject(String(item))
-                flushCurrentNode()
-                return deduplicate(parsedNodes)
-            }
+        return scanProxiesSection(in: document.components(separatedBy: .newlines))
+    }
+
+    private static func scanProxiesSection(in lines: [String]) -> [[String: String]] {
+        var entries: [[String: String]] = []
+        var current: [String: String] = [:]
+
+        func flushCurrentEntry() {
+            guard !current.isEmpty else { return }
+            entries.append(current)
+            current.removeAll(keepingCapacity: true)
         }
 
+        var insideProxies = false
         for rawLine in lines {
-            let line    = stripYAMLComment(from: rawLine)
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let line = stripComment(from: rawLine)
+            let trimmed = line.trimmed
             guard !trimmed.isEmpty else { continue }
 
-            // Detect start of `proxies:` section
-            if !inProxiesSection {
-                if trimmed == "proxies:" { inProxiesSection = true }
+            guard insideProxies else {
+                insideProxies = trimmed == "proxies:"
                 continue
             }
 
-            // Any top-level key (no leading whitespace) other than `proxies:` ends the section
-            if !line.hasPrefix(" ") && !line.hasPrefix("\t") && trimmed.hasSuffix(":") {
-                flushCurrentNode()
+            // The next top-level key closes the section.
+            guard line.isIndented || !trimmed.hasSuffix(":") else {
+                flushCurrentEntry()
                 break
             }
 
-            // New list entry `-`
-            if trimmed.hasPrefix("-") {
-                flushCurrentNode()
-
-                let item = trimmed.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
-                if item.hasPrefix("{") && item.hasSuffix("}") {
-                    // Inline object: {name: ..., type: ..., ...}
-                    currentFields = parseInlineObject(String(item))
-                    flushCurrentNode()
-                } else {
-                    currentFields = [:]
-                    if let (k, v) = parseKeyValue(item) { currentFields[k] = v }
-                }
+            guard trimmed.hasPrefix("-") else {
+                appendContinuation(trimmed, to: &current)
                 continue
             }
 
-            // Continuation key-value inside the current block entry
-            if let (k, v) = parseKeyValue(trimmed) {
-                if v.hasPrefix("{"), v.hasSuffix("}") {
-                    currentFields.merge(parseInlineObject(v, prefix: k)) { _, new in new }
-                } else {
-                    currentFields[k] = v
-                }
+            // A new list entry closes the previous one.
+            flushCurrentEntry()
+            let item = String(trimmed.dropFirst()).trimmed
+            if let inlineObject = inlineObject(of: item) {
+                entries.append(parseInlineObject(inlineObject))
+            } else {
+                current = keyValuePair(in: item).map { [$0.key: $0.value] } ?? [:]
             }
         }
 
-        flushCurrentNode()
-        return deduplicate(parsedNodes)
+        flushCurrentEntry()
+        return entries
     }
 
-    // MARK: - YAML helpers
-
-    /// Strips trailing `# comment` while respecting single- and double-quoted strings.
-    private static func stripYAMLComment(from line: String) -> String {
-        var out = ""
-        var inSingle = false
-        var inDouble = false
-        for ch in line {
-            if ch == "\"" && !inSingle { inDouble.toggle() }
-            else if ch == "'" && !inDouble { inSingle.toggle() }
-            if ch == "#" && !inSingle && !inDouble { break }
-            out.append(ch)
+    /// A key on its own line either holds a value or an inline nested object.
+    private static func appendContinuation(_ line: String, to fields: inout [String: String]) {
+        guard let pair = keyValuePair(in: line) else { return }
+        if let inlineObject = inlineObject(of: pair.value) {
+            fields.merge(parseInlineObject(inlineObject, prefix: pair.key)) { _, newValue in newValue }
+        } else {
+            fields[pair.key] = pair.value
         }
-        return out
     }
 
-    /// Parses `key: value` (lowercases the key, strips surrounding quotes from value).
-    private static func parseKeyValue(_ text: String) -> (String, String)? {
-        guard let sep = text.firstIndex(of: ":") else { return nil }
-        let key = String(text[..<sep]).trimmed.lowercased()
-        let val = String(text[text.index(after: sep)...]).trimmed
-        guard !key.isEmpty else { return nil }
-        return (key, unquote(val))
+    // MARK: - Field mapping
+
+    /// The fields of one proxy entry. Mihomo subscriptions spell the same concept in
+    /// several ways, so each lookup walks the aliases in order.
+    private struct ProxyFields {
+        private let values: [String: String]
+
+        init(_ values: [String: String]) {
+            self.values = values
+        }
+
+        /// First non-empty value among `keys`.
+        private func string(_ keys: [String]) -> String? {
+            for key in keys {
+                if let value = values[key], !value.isEmpty { return value }
+            }
+            return nil
+        }
+
+        private func string(_ keys: String...) -> String? {
+            string(keys)
+        }
+
+        private func int(_ key: String) -> Int? {
+            string([key]).flatMap(Int.init)
+        }
+
+        private func boolean(_ keys: [String]) -> Bool? {
+            guard let text = string(keys)?.lowercased() else { return nil }
+            switch text {
+            case "true", "yes", "1": return true
+            case "false", "no", "0": return false
+            default: return nil
+            }
+        }
+
+        private func boolean(_ keys: String...) -> Bool? {
+            boolean(keys)
+        }
+
+        /// A display-only node: name and server are enough, the secret field's name
+        /// varies by protocol.
+        var node: ServerNode? {
+            guard let name = string("name"), let host = string("server") else { return nil }
+
+            let cipher = string("cipher", "method")
+            return ServerNode(
+                name: name,
+                host: host,
+                port: int("port") ?? 443,
+                password: string("password", "uuid", "auth", "auth-str", "private-key") ?? "",
+                nodeType: string("type") ?? "shadowsocks",
+                method: cipher,
+                sni: string("sni", "servername", "server-name"),
+                latency: nil,
+                flow: string("flow"),
+                encryption: string("encryption") ?? cipher,
+                tls: boolean("tls"),
+                skipCertVerify: boolean("skip-cert-verify"),
+                network: string("network"),
+                publicKey: string("reality-opts.public-key", "reality-opts.publickey", "pbk"),
+                shortId: string("reality-opts.short-id", "reality-opts.shortid", "sid"),
+                serviceName: string("grpc-opts.grpc-service-name", "ws-opts.path", "path", "servicename"),
+                clientFingerprint: string("client-fingerprint", "fingerprint", "fp")
+            )
+        }
     }
 
-    /// Parses `{key: value, key2: value2, nested: {key: value}}` inline YAML objects.
+    // MARK: - YAML text helpers
+
+    /// The `{...}` body of a lone inline object (`{...}` or `- {...}`), else nil.
+    private static func inlineObject(of text: String) -> String? {
+        let body = text.hasPrefix("-") ? String(text.dropFirst()).trimmed : text
+        guard body.hasPrefix("{"), body.hasSuffix("}") else { return nil }
+        return body
+    }
+
+    /// Parses `{key: value, key2: value2, nested: {key: value}}`, flattening nested
+    /// objects under a `parent.child` key.
     private static func parseInlineObject(_ text: String, prefix: String? = nil) -> [String: String] {
-        let inner  = String(text.dropFirst().dropLast())
-        let fields = splitCommaRespectingQuotes(inner)
+        let body = String(text.dropFirst().dropLast())
+
         var result: [String: String] = [:]
-        for field in fields {
-            guard let (key, value) = parseKeyValue(field) else { continue }
-            let fullKey = [prefix, key].compactMap { $0 }.joined(separator: ".")
-            if value.hasPrefix("{"), value.hasSuffix("}") {
-                result.merge(parseInlineObject(value, prefix: fullKey)) { _, new in new }
+        for field in splitOnCommas(body) {
+            guard let pair = keyValuePair(in: field) else { continue }
+            let key = [prefix, pair.key].compactMap { $0 }.joined(separator: ".")
+            if let nested = inlineObject(of: pair.value) {
+                result.merge(parseInlineObject(nested, prefix: key)) { _, newValue in newValue }
             } else {
-                result[fullKey] = value
+                result[key] = pair.value
             }
         }
         return result
     }
 
+    /// Splits `key: value` into a lowercased key and an unquoted value.
+    private static func keyValuePair(in text: String) -> (key: String, value: String)? {
+        guard let separator = text.firstIndex(of: ":") else { return nil }
+        let key = String(text[..<separator]).trimmed.lowercased()
+        guard !key.isEmpty else { return nil }
+        return (key, unquote(String(text[text.index(after: separator)...])))
+    }
+
     /// Splits on `,` while respecting quoted strings and nested inline objects.
-    private static func splitCommaRespectingQuotes(_ text: String) -> [String] {
-        var results: [String] = []
+    private static func splitOnCommas(_ text: String) -> [String] {
+        var segments: [String] = []
         var buffer = ""
-        var inSingle = false
-        var inDouble = false
+        var quote: Character?
         var braceDepth = 0
-        for ch in text {
-            if ch == "\"" && !inSingle { inDouble.toggle() }
-            else if ch == "'" && !inDouble { inSingle.toggle() }
 
-            if !inSingle && !inDouble {
-                if ch == "{" { braceDepth += 1 }
-                else if ch == "}", braceDepth > 0 { braceDepth -= 1 }
+        for character in text {
+            if let opening = quote {
+                if character == opening { quote = nil }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "{" {
+                braceDepth += 1
+            } else if character == "}" {
+                braceDepth -= 1
             }
 
-            if ch == "," && !inSingle && !inDouble && braceDepth == 0 {
-                results.append(buffer.trimmed)
+            if character == ",", quote == nil, braceDepth == 0 {
+                segments.append(buffer.trimmed)
                 buffer.removeAll(keepingCapacity: true)
-                continue
+            } else {
+                buffer.append(character)
             }
-            buffer.append(ch)
         }
-        if !buffer.isEmpty { results.append(buffer.trimmed) }
-        return results
+        if !buffer.trimmed.isEmpty { segments.append(buffer.trimmed) }
+        return segments
+    }
+
+    /// Strips a trailing `# comment` while respecting single- and double-quoted text.
+    private static func stripComment(from line: String) -> String {
+        var result = ""
+        var quote: Character?
+
+        for character in line {
+            if let opening = quote {
+                if character == opening { quote = nil }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "#" {
+                break
+            }
+            result.append(character)
+        }
+        return result
     }
 
     /// Removes surrounding `"..."` or `'...'` quotes.
     private static func unquote(_ text: String) -> String {
-        let t = text.trimmed
-        guard t.count >= 2 else { return t }
-        if (t.hasPrefix("\"") && t.hasSuffix("\"")) || (t.hasPrefix("'") && t.hasSuffix("'")) {
-            return String(t.dropFirst().dropLast())
-        }
-        return t
-    }
-
-    private static func parseBool(_ text: String?) -> Bool? {
-        switch text?.trimmed.lowercased() {
-        case "true", "yes", "1":
-            return true
-        case "false", "no", "0":
-            return false
-        default:
-            return nil
-        }
+        let trimmed = text.trimmed
+        guard trimmed.count >= 2 else { return trimmed }
+        let quote = trimmed.first
+        guard quote == "\"" || quote == "'", trimmed.hasSuffix(String(quote!)) else { return trimmed }
+        return String(trimmed.dropFirst().dropLast())
     }
 
     private static func deduplicate(_ nodes: [ServerNode]) -> [ServerNode] {
-        var seen   = Set<String>()
-        var result = [ServerNode]()
-        for node in nodes {
-            let key = "\(node.name.lowercased())|\(node.host.lowercased())"
-            if seen.insert(key).inserted { result.append(node) }
-        }
-        return result
+        var seen = Set<String>()
+        return nodes.filter { seen.insert("\($0.name.lowercased())|\($0.host.lowercased())").inserted }
     }
 }
 
-// MARK: - String convenience
-
 private extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    var isIndented: Bool { hasPrefix(" ") || hasPrefix("\t") }
 }

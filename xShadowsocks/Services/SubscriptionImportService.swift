@@ -14,7 +14,6 @@ struct SubscriptionImportResult {
 enum SubscriptionNodeImportError: LocalizedError {
     case invalidURL
     case invalidText
-    case noNodesFound
     case requiresYAMLConfig
     case httpStatus(Int)
 
@@ -24,8 +23,6 @@ enum SubscriptionNodeImportError: LocalizedError {
             return "链接无效，请输入完整的 http(s) 链接"
         case .invalidText:
             return "下载内容不是有效文本"
-        case .noNodesFound:
-            return "配置已保存，但未解析到 proxies 节点（可能仅有 proxy-providers）"
         case .requiresYAMLConfig:
             return "需要完整的 mihomo/Clash YAML 配置文件（含 proxies:）"
         case let .httpStatus(statusCode):
@@ -66,23 +63,31 @@ struct SubscriptionNodeImportService {
             throw SubscriptionNodeImportError.invalidURL
         }
 
-        let yamlPayload = try await fetchPayload(from: url, session: Self.clashSession)
-        let yamlResult = SubscriptionContentParser.parse(yamlPayload)
+        let yamlResult = SubscriptionContentParser.parse(
+            try await fetchPayload(from: url, session: Self.clashSession)
+        )
         guard let rawYAML = yamlResult.rawYAML else {
             throw SubscriptionNodeImportError.requiresYAMLConfig
         }
 
-        let nodePayload = try? await fetchPayload(from: url, session: Self.nodeSession)
-        let nodeResult = nodePayload.map(SubscriptionContentParser.parse)
-        let displayNodes = nodeResult?.nodes.isEmpty == false ? nodeResult?.nodes ?? [] : yamlResult.nodes
+        // The downloaded YAML is stored as-is; the node list is only what the UI shows.
+        let displayNodes = await nodeListNodes(from: url) ?? yamlResult.nodes
 
-        let resolvedName = resolvedSourceName(url: url, configName: configName)
         return SubscriptionImportResult(
-            sourceName: resolvedName,
+            sourceName: resolvedSourceName(url: url, configName: configName),
             sourceURL: trimmedURL,
             nodes: displayNodes,
             rawYAMLConfig: rawYAML
         )
+    }
+
+    /// Nodes from the generic-UA request, or nil when it fails or carries none —
+    /// subscriptions that gate on User-Agent answer that second request with a plain
+    /// node list, which labels the Home tab better than the config's own entries.
+    private func nodeListNodes(from url: URL) async -> [ServerNode]? {
+        guard let payload = try? await fetchPayload(from: url, session: Self.nodeSession) else { return nil }
+        let nodes = SubscriptionContentParser.parse(payload).nodes
+        return nodes.isEmpty ? nil : nodes
     }
 
     private func fetchPayload(from url: URL, session: URLSession) async throws -> String {

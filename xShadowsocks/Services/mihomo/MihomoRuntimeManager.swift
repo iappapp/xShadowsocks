@@ -2,9 +2,11 @@ import Foundation
 import os
 
 actor MihomoRuntimeManager {
-    private  var onStateChange: (@Sendable (MihomoRuntimeState) -> Void)?
+    private var onStateChange: (@Sendable (MihomoRuntimeState) -> Void)?
 
-    private let bridge: any MihomoCoreBridge
+    /// The bridge is a singleton wrapping the core's C entry points; it serializes
+    /// every call itself, so the actor only guards its own state.
+    private let bridge: MihomoCoreBridge
     private let fileManager: FileManager
     private let workingDirectoryURL: URL
     private let mmdbStore: CountryMMDBStore
@@ -13,7 +15,7 @@ actor MihomoRuntimeManager {
     private var currentSnapshot: MihomoRuntimeSnapshot?
 
     init(
-        bridge: any MihomoCoreBridge,
+        bridge: MihomoCoreBridge = .shared,
         workingDirectoryURL: URL,
         fileManager: FileManager = .default
     ) {
@@ -33,7 +35,7 @@ actor MihomoRuntimeManager {
         logger.info("runtime start begin")
 
         do {
-            let paths = try resolveDownloadedConfigPaths()
+            let paths = try resolveDownloadedConfigPaths(for: request)
             logger.info("resolved config=\(paths.configPath, privacy: .public)")
             _ = try await mmdbStore.ensureMMDB(in: workingDirectoryURL)
             logger.info("Country.mmdb / GeoSite.dat ready")
@@ -63,7 +65,7 @@ actor MihomoRuntimeManager {
     func reload(with request: MihomoBootstrapRequest) async throws {
         logger.info("runtime reload begin")
         do {
-            let paths = try resolveDownloadedConfigPaths()
+            let paths = try resolveDownloadedConfigPaths(for: request)
             _ = try await mmdbStore.ensureMMDB(in: workingDirectoryURL)
             try bridge.reload(configPath: paths.configPath)
 
@@ -111,13 +113,15 @@ actor MihomoRuntimeManager {
     }
 
     /// Uses the downloaded/imported YAML file as-is (no rebuild / concat).
-    /// The filename is the active one tracked in `MihomoConfigFileStore`.
-    private func resolveDownloadedConfigPaths() throws -> (configPath: String, workingDirectory: String) {
+    /// Falls back to the active filename tracked in `MihomoConfigFileStore`.
+    private func resolveDownloadedConfigPaths(
+        for request: MihomoBootstrapRequest
+    ) throws -> (configPath: String, workingDirectory: String) {
         try ensureDirectoryIfNeeded(workingDirectoryURL)
-        let configFileName = MihomoConfigFileStore.activeFileName
+        let configFileName = request.configFileName ?? MihomoConfigFileStore.activeFileName
         let configURL = workingDirectoryURL.appendingPathComponent(configFileName)
         guard fileManager.fileExists(atPath: configURL.path) else {
-            throw MihomoRuntimeError.missingConfigFile
+            throw MihomoRuntimeError.missingConfigFile(configFileName)
         }
         return (configURL.path, workingDirectoryURL.path)
     }

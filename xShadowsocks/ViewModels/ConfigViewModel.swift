@@ -55,16 +55,16 @@ final class ConfigViewModel: ObservableObject {
                 throw SubscriptionNodeImportError.requiresYAMLConfig
             }
 
-            let mergedYAML = MihomoYAMLProxyInjector.injecting(result.nodes, into: yaml)
+            // The downloaded config is used verbatim: the nodes are only for display.
             let fileName = MihomoConfigFileStore.fileName(forConfigName: trimmedName)
-            try MihomoConfigFileStore.save(mergedYAML, as: fileName)
+            try MihomoConfigFileStore.save(yaml, as: fileName)
 
             let source = ConfigSourceModel(
                 name: result.sourceName,
                 url: result.sourceURL,
                 nodes: result.nodes,
                 updatedAt: Date(),
-                yamlConfig: mergedYAML,
+                yamlConfig: yaml,
                 fileName: fileName
             )
             // Replace an existing source with the same filename (a re-import), keeping

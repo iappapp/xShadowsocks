@@ -154,11 +154,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-/* xPacketTunnel is intentionally not built as part of this target. Embedding it
-   requires the Network Extension entitlement, which a free Apple Developer account
-   cannot sign, so the app builds standalone and runs the core in loopback mode. On a
-   paid account, add an "Embed App Extensions" copy phase containing xPacketTunnel.appex
-   plus a target dependency on xPacketTunnel. */
 		042FC7CD2F556E1B00904641 /* xShadowsocks */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 042FC7EF2F556E1E00904641 /* Build configuration list for PBXNativeTarget "xShadowsocks" */;
@@ -460,7 +455,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P2XLW7B46G;
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = xShadowsocks;
@@ -500,7 +495,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P2XLW7B46G;
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = xShadowsocks;
@@ -538,7 +533,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P2XLW7B46G;
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
@@ -558,7 +553,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P2XLW7B46G;
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				MARKETING_VERSION = 1.0;
@@ -575,9 +570,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = xPacketTunnel/xPacketTunnel.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = xPacketTunnel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = xPacketTunnel;
@@ -602,9 +598,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = xPacketTunnel/xPacketTunnel.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = WW6T35AQKP;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = xPacketTunnel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = xPacketTunnel;
